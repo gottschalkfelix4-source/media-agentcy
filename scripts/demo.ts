@@ -160,10 +160,20 @@ for (let day = 13; day >= 0; day--) {
 // ---------- media servers (accounts for the user import) ----------
 const none = async () => [];
 const ok = async () => ({ ok: true, version: 'demo' });
+const daysAgo = (d: number) => new Date(Date.now() - d * 86_400_000).toISOString();
+const recent = [
+  { type: 'movie', title: 'Dune: Part Two', year: 2024, added: daysAgo(1) },
+  { type: 'movie', title: 'Past Lives', year: 2023, added: daysAgo(3) },
+  { type: 'series', title: 'Shōgun', added: daysAgo(2) },
+  ...[1, 2, 3].map((e) => ({ type: 'episode', title: 'Shōgun', season: 1, added: daysAgo(2 + e / 10) })),
+  ...[7, 8].map((e) => ({ type: 'episode', title: 'The Bear', season: 3, added: daysAgo(e / 2) })),
+];
 app.ctx.services.jellyfin = {
   ping: ok,
   sessions: none,
   activity: none,
+  createUser: async (name: string) => ({ id: `jf-new-${name}`, name }),
+  recentlyAdded: async (since: Date) => recent.filter((r) => new Date(r.added) >= since),
   users: async () =>
     [
       ['felix', true],
@@ -187,6 +197,7 @@ app.ctx.services.plex = {
 } as never;
 app.ctx.services.seerr = {
   ping: ok,
+  importFromJellyfin: async (ids: string[]) => ids.map((_, i) => ({ id: 20 + i })),
   users: async () => [
     { id: 1, displayName: 'Felix', jellyfinUsername: 'felix', plexUsername: 'felix_g' },
     { id: 3, displayName: 'Anna', jellyfinUsername: 'anna' },

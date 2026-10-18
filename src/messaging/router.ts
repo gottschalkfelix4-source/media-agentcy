@@ -5,6 +5,8 @@ import type { User } from '../db/repo.js';
 import { bus } from '../events.js';
 import { pingAll } from '../integrations/index.js';
 import type { ImageInput } from '../llm/index.js';
+import { disruptionNotice } from '../notifier/outage.js';
+import { sttConfig, transcribe } from '../llm/transcribe.js';
 
 export interface IncomingMessage {
   /** Phone number digits, or "lid:<id>" when the number is unknown. */
@@ -14,7 +16,11 @@ export interface IncomingMessage {
   pushName?: string;
   text: string;
   images?: ImageInput[];
+  /** Voice message: transcribed only after the access checks, so unknown or blocked numbers cost nothing. */
+  audio?: { seconds?: number; mime?: string; download: () => Promise<Uint8Array> };
 }
+
+const VOICE_FALLBACK = '[Der Nutzer hat eine Sprachnachricht geschickt. Du kannst sie nicht anhören – bitte ihn freundlich, es kurz zu schreiben.]';
 
 interface Pending {
   texts: string[];
@@ -105,8 +111,28 @@ export class Router {
       void notifyAdmins(this.ctx, `🆕 Neuer Nutzer (automatisch freigeschaltet): ${userLabel(user)}`);
     }
 
+    if (msg.audio) msg = { ...msg, text: await this.voiceText(user, msg.audio) };
+
     if (await this.handleCommand(user, msg.text)) return;
     this.buffer(user.id, msg.text, msg.images);
+  }
+
+  private async voiceText(user: User, audio: NonNullable<IncomingMessage['audio']>) {
+    const { config, logger, repo } = this.ctx;
+    const stt = sttConfig(config);
+    if (!stt) return VOICE_FALLBACK;
+    if (audio.seconds && config.VOICE_MAX_SECONDS > 0 && audio.seconds > config.VOICE_MAX_SECONDS) {
+      return `[Der Nutzer hat eine ${audio.seconds} Sekunden lange Sprachnachricht geschickt – zu lang (max. ${config.VOICE_MAX_SECONDS} Sekunden). Bitte ihn freundlich, es kürzer zu sagen oder zu schreiben.]`;
+    }
+    try {
+      const started = Date.now();
+      const text = await transcribe(stt, await audio.download(), audio.mime);
+      repo.logAction(user.id, null, 'voice_transcribed', { seconds: audio.seconds, chars: text.length, ms: Date.now() - started });
+      return text ? `[Sprachnachricht] ${text}` : '[Sprachnachricht ohne verständlichen Inhalt – frag kurz nach, was er meint.]';
+    } catch (err) {
+      logger.warn({ err, user: user.id }, 'Sprachnachricht konnte nicht umgewandelt werden');
+      return VOICE_FALLBACK;
+    }
   }
 
   /** Live state of all conversations that are not idle, plus the last result per user. */
@@ -200,6 +226,13 @@ export class Router {
       if (!user || user.status !== 'active') return;
       const blocked = blockedBy(this.ctx, user);
       if (blocked) return handleBlocked(this.ctx, user, text, blocked, (t) => this.send(user, t));
+      // Known disruption: fixed notice instead of the agent (at most every 2 h, then the agent takes over again).
+      const notice = disruptionNotice(this.ctx, user);
+      if (notice) {
+        this.ctx.repo.addMessage(user.id, 'user', images.length ? `${text}\n[${images.length} Bild(er) gesendet]` : text);
+        this.ctx.repo.addMessage(user.id, 'assistant', notice);
+        return this.send(user, notice);
+      }
       const reply = await this.agent.handleMessage(user, capLength(this.ctx, user, text), images.length ? images : undefined);
       await this.send(user, reply);
     });

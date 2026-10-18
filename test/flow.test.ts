@@ -355,3 +355,23 @@ test('abuse protection: off-topic requests are declined, after 3 the bot pauses 
   await ask('Bist du wieder da?');
   assert.match(lastTo(USER), /Wieder da/);
 });
+
+test('stuck requests: the poller diagnoses old open requests itself, fixes them and sends the admin one summary', async () => {
+  const { checkStuckRequests } = await import('../src/notifier/stuck.js');
+  state.arrival.status = 3;
+  const lena = app.repo.createUser('4915100000077', { status: 'active', display_name: 'Lena' });
+  const sixDaysAgo = new Date(Date.now() - 6 * 86_400_000).toISOString().slice(0, 19).replace('T', ' ');
+  app.repo.addBotRequest({ user_id: lena.id, source: 'seerr', external_id: '777', tmdb_id: 329865, media_type: 'movie', title: 'Arrival', created_at: sixDaysAgo });
+  app.repo.addBotRequest({ user_id: lena.id, source: 'seerr', external_id: '778', tmdb_id: 438631, media_type: 'movie', title: 'Zu frisch' });
+
+  const searches = calls.filter((c) => c.path === '/radarr/api/v3/command').length;
+  const r = await checkStuckRequests(app.ctx);
+  assert.equal(r.checked, 1, 'only requests older than STUCK_REQUEST_DAYS');
+  assert.deepEqual(r.fixed, [{ title: 'Arrival', user: r.fixed[0]?.user, action: 'search_again' }]);
+  assert.equal(calls.filter((c) => c.path === '/radarr/api/v3/command').length, searches + 1);
+  assert.match(lastTo(ADMIN), /Hängende Anfragen[\s\S]*Selbst angestoßen:\n• Arrival \(.*Lena.*\): neu gesucht/);
+  assert.equal(lastTo('4915100000077'), '', 'the user is not bothered');
+
+  const again = await checkStuckRequests(app.ctx);
+  assert.equal(again.checked, 0, 'each request at most once a day');
+});

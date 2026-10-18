@@ -20,6 +20,20 @@ const ACTIONS: Record<string, string> = {
   web_broadcast: 'Rundnachricht (Web)',
   web_settings: 'Einstellungen geändert',
   web_whatsapp_logout: 'WhatsApp abgemeldet',
+  web_user_imported: 'Nutzer importiert (Web)',
+  request_fix: 'Anfrage angestoßen',
+  stuck_autofix: 'Hängende Anfrage angestoßen',
+  limits_reset: 'Limits aufgehoben',
+  off_topic: 'Themenfremde Anfrage',
+  jellyfin_account_created: 'Jellyfin-Konto angelegt',
+  maintenance_set: 'Wartungshinweis gesetzt',
+  maintenance_cleared: 'Wartungshinweis aufgehoben',
+  outage_detected: 'Störung erkannt',
+  outage_resolved: 'Störung behoben',
+  digest_sent: 'Wochenrückblick verschickt',
+  digest_skipped: 'Wochenrückblick übersprungen',
+  digest_preference: 'Wochenrückblick an/ab',
+  voice_transcribed: 'Sprachnachricht umgewandelt',
 };
 
 const actionLabel = (a: string) => ACTIONS[a] ?? a.replace(/_/g, ' ');

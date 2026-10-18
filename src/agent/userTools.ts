@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { pingAll } from '../integrations/index.js';
 import { MEDIA_STATUS, REQUEST_STATUS } from '../integrations/seerr.js';
 import { titleScore } from '../integrations/http.js';
+import { collectNew } from '../notifier/digest.js';
 import { notifyAdmins, userLabel } from './context.js';
 import { offTopic } from './abuse.js';
 import { checkRequest, requestFix } from './requestTools.js';
@@ -543,6 +544,29 @@ export const forgetFact = defineTool({
   },
 });
 
+export const whatsNew = defineTool({
+  name: 'whats_new',
+  description: 'Was ist neu auf dem Server? Liefert die in den letzten Tagen hinzugefügten Filme und Serien(-folgen). Für Fragen wie "Was gibt es Neues?" oder Empfehlungen aus den Neuzugängen.',
+  schema: z.object({ days: z.number().int().min(1).max(30).default(7) }),
+  async run({ days }, ctx) {
+    const n = await collectNew(ctx.services, days).catch((err: Error) => {
+      throw new ToolError(err.message);
+    });
+    return { days, movies: n.movies.slice(0, 30), series: n.series.slice(0, 20), more: Math.max(0, n.movies.length - 30) + Math.max(0, n.series.length - 20) };
+  },
+});
+
+export const setDigest = defineTool({
+  name: 'set_digest',
+  description: 'Wochenrückblick ("Neu auf dem Server", einmal pro Woche) für diesen Nutzer an- oder abbestellen, z.B. bei "Wochenrückblick aus".',
+  schema: z.object({ enabled: z.boolean() }),
+  async run({ enabled }, ctx) {
+    ctx.repo.updateUser(ctx.user.id, { digest: enabled ? 1 : 0 });
+    ctx.repo.logAction(ctx.user.id, null, 'digest_preference', { enabled });
+    return { ok: true, enabled, digestActive: ctx.config.DIGEST_ENABLED };
+  },
+});
+
 export const serviceStatus = defineTool({
   name: 'service_status',
   description: 'Prüft, ob die Server-Dienste (Jellyfin, Plex, Anfragesystem, Downloader) erreichbar sind.',
@@ -572,5 +596,7 @@ export const userTools: Tool[] = [
   rememberFact,
   forgetFact,
   serviceStatus,
+  whatsNew,
+  setDigest,
   offTopic,
 ] as unknown as Tool[];

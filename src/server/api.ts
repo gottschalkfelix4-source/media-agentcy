@@ -6,6 +6,7 @@ import { z } from 'zod';
 import type { App } from '../app.js';
 import { blockedBy, limitStatus, resetLimits } from '../agent/abuse.js';
 import { userLabel } from '../agent/context.js';
+import { onboardOnApproval, onboardUser } from '../agent/onboarding.js';
 import type { Config } from '../config.js';
 import type { TicketStatus, User, UserPatch } from '../db/repo.js';
 import { bus, type AppEvent } from '../events.js';
@@ -16,6 +17,7 @@ import { GROUPS } from '../settings/registry.js';
 import type { WhatsAppClient } from '../whatsapp/client.js';
 import { SESSION_COOKIE, type WebAuth } from './auth.js';
 import { syncRequests } from '../notifier/requestSync.js';
+import { getMaintenance, getOutage, setMaintenance } from '../notifier/outage.js';
 import { mergeAccounts, normalizePhone, type MediaAccountLists } from './userImport.js';
 
 export interface ApiDeps {
@@ -41,8 +43,8 @@ const ACTIVE_TICKETS: TicketStatus[] = ['open', 'auto_fixing', 'escalated'];
 const importWelcomeEvent = (adminName: string, displayName?: string | null) =>
   `${adminName} hat dich gerade für diesen Nutzer${displayName ? ` (Name: ${displayName})` : ''} eingerichtet. Der Nutzer hat dir noch nie geschrieben und kennt dich noch nicht. Schreib ihm eine kurze erste Nachricht: wer du bist, dass ${adminName} dich eingerichtet hat, und in 2-3 Sätzen, wobei du helfen kannst (Filme/Serien anfragen, Probleme melden, Benachrichtigung wenn Anfragen fertig sind).`;
 
-const welcomeEvent = (displayName?: string | null) =>
-  `Der Admin hat dich gerade freigeschaltet. Begrüße den Nutzer kurz${displayName ? ` (Name: ${displayName})` : ''}, stell dich vor und erkläre in 2-3 Sätzen, wobei du helfen kannst (Filme/Serien anfragen, Probleme melden, Benachrichtigung wenn Anfragen fertig sind). Beantworte ggf. auch seine erste Nachricht aus dem Verlauf.`;
+const welcomeEvent = (displayName?: string | null, note?: string) =>
+  `Der Admin hat dich gerade freigeschaltet. Begrüße den Nutzer kurz${displayName ? ` (Name: ${displayName})` : ''}, stell dich vor und erkläre in 2-3 Sätzen, wobei du helfen kannst (Filme/Serien anfragen, Probleme melden, Benachrichtigung wenn Anfragen fertig sind). Beantworte ggf. auch seine erste Nachricht aus dem Verlauf.${note ? ` ${note}` : ''}`;
 
 async function body<S extends z.ZodType>(c: Context, schema: S): Promise<z.output<S>> {
   const raw = await c.req.json().catch(() => {
@@ -298,14 +300,22 @@ export function createApi(deps: ApiDeps) {
         phone: z.string(),
         display_name: z.string().trim().min(1).optional(),
         status: z.enum(['active', 'pending', 'blocked']).default('active'),
+        /** Create a Jellyfin account right away, send the credentials and a welcome (active users only). */
+        onboard: z.boolean().optional(),
       }),
     );
     const p = normalizePhone(b.phone);
     if ('error' in p) throw new HttpError(400, p.error);
     if (repo.getUserByWaId(p.phone)) throw new HttpError(409, 'Diese Nummer gibt es schon');
+    const onboard = b.onboard && b.status === 'active';
+    if (onboard && !ctx.services.jellyfin) throw new HttpError(400, 'Jellyfin ist nicht konfiguriert');
+    if (onboard && !b.display_name) throw new HttpError(400, 'Für das Jellyfin-Konto brauche ich einen Namen');
     const u = repo.createUser(p.phone, { display_name: b.display_name ?? null, status: b.status });
     repo.logAction(u.id, null, 'web_user_created', { phone: p.phone });
-    return c.json(u);
+    if (!onboard) return c.json(u);
+    const onboarding = await onboardOnApproval(ctx, u, true);
+    ctx.dispatchEvent(u.id, welcomeEvent(u.display_name, onboarding?.note));
+    return c.json({ ...repo.getUser(u.id), onboarding: { jellyfinUser: onboarding?.jellyfin?.username, errors: onboarding?.errors ?? [] } });
   });
 
   api.get('/users/:id', (c) => {
@@ -344,16 +354,20 @@ export function createApi(deps: ApiDeps) {
         ombi_username: z.string().trim().nullable().optional(),
         summary: z.string().nullable().optional(),
         bot_paused: z.boolean().optional(),
+        digest: z.boolean().optional(),
         welcome: z.boolean().optional(),
+        /** Create a Jellyfin account on approval; omitted = setting ONBOARD_JELLYFIN. */
+        onboard: z.boolean().optional(),
       }),
     );
     if (before.role === 'admin' && b.status && b.status !== 'active' && ctx.config.ADMIN_NUMBERS.includes(before.wa_id)) {
       throw new HttpError(400, 'Admin-Nummern können nicht gesperrt werden – erst aus den Admin-Nummern entfernen.');
     }
-    const { welcome, bot_paused, ...rest } = b;
+    const { welcome, bot_paused, digest, onboard, ...rest } = b;
     const patch: UserPatch = {};
     for (const [k, v] of Object.entries(rest)) if (v !== undefined) (patch as Record<string, unknown>)[k] = v === '' ? null : v;
     if (bot_paused !== undefined) patch.bot_paused = bot_paused ? 1 : 0;
+    if (digest !== undefined) patch.digest = digest ? 1 : 0;
     // Jellyfin name given without id → look up the id.
     if (patch.jellyfin_username && b.jellyfin_user_id === undefined && ctx.services.jellyfin) {
       const jf = (await ctx.services.jellyfin.users().catch(() => [])).find((x) => x.name.toLowerCase() === patch.jellyfin_username!.toLowerCase());
@@ -362,10 +376,33 @@ export function createApi(deps: ApiDeps) {
     if (patch.jellyfin_username === null) patch.jellyfin_user_id = null;
     repo.updateUser(id, patch);
     repo.logAction(id, null, 'web_user_updated', { fields: Object.keys(patch) });
+    let onboarding: Awaited<ReturnType<typeof onboardOnApproval>>;
     if (b.status === 'active' && before.status !== 'active' && welcome !== false) {
-      ctx.dispatchEvent(id, welcomeEvent(patch.display_name ?? before.display_name));
+      onboarding = await onboardOnApproval(ctx, repo.getUser(id)!, onboard);
+      ctx.dispatchEvent(id, welcomeEvent(patch.display_name ?? before.display_name, onboarding?.note));
     }
-    return c.json(repo.getUser(id));
+    return c.json({ ...repo.getUser(id), ...(onboarding ? { onboarding: { jellyfinUser: onboarding.jellyfin?.username, errors: onboarding.errors } } : {}) });
+  });
+
+  api.get('/maintenance', (c) =>
+    c.json({ maintenance: getMaintenance(repo) ?? null, outage: getOutage(repo) ?? null, detection: ctx.config.OUTAGE_DETECTION }),
+  );
+
+  api.put('/maintenance', async (c) => {
+    const b = await body(c, z.object({ message: z.string().trim().max(500).nullable(), hours: z.number().positive().max(168).optional() }));
+    const r = await setMaintenance(ctx, b.message || null, b.hours);
+    return c.json({ maintenance: r.maintenance ?? null, outage: getOutage(repo) ?? null, detection: ctx.config.OUTAGE_DETECTION, notified: r.notified });
+  });
+
+  /** Create a Jellyfin account (+ Jellyseerr import) and send the credentials to the user. */
+  api.post('/users/:id/onboard', async (c) => {
+    const u = getUserOr404(idParam(c));
+    if (!ctx.services.jellyfin) throw new HttpError(400, 'Jellyfin ist nicht konfiguriert');
+    if (u.jellyfin_user_id || u.jellyfin_username) throw new HttpError(409, 'Nutzer hat schon ein Jellyfin-Konto');
+    const r = await onboardUser(ctx, u).catch((err: Error) => {
+      throw new HttpError(502, `Jellyfin: ${err.message}`);
+    });
+    return c.json({ user: repo.getUser(u.id), jellyfinUser: r.jellyfin?.username, seerrUserId: r.seerrUserId, errors: r.errors });
   });
 
   api.delete('/users/:id', (c) => {

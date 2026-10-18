@@ -22,6 +22,8 @@ export interface User {
   created_at: string;
   last_seen_at: string | null;
   bot_paused: number;
+  /** Weekly digest: 1 = gets it, 0 = opted out. */
+  digest: number;
 }
 
 export interface StoredMessage {
@@ -121,6 +123,7 @@ const USER_FIELDS = [
   'admin_notified_at',
   'last_seen_at',
   'bot_paused',
+  'digest',
 ] as const;
 
 export type UserPatch = Partial<Pick<User, (typeof USER_FIELDS)[number]>>;
@@ -428,6 +431,10 @@ export class Repo {
 
   setKv(key: string, value: string) {
     this.run('INSERT INTO kv (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', key, value);
+  }
+
+  deleteKv(key: string) {
+    this.run('DELETE FROM kv WHERE key = ?', key);
   }
 
   // ---------- settings (web UI overrides of env vars) ----------

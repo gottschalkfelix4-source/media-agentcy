@@ -3,6 +3,9 @@ import type { User } from '../db/repo.js';
 import { pingAll } from '../integrations/index.js';
 import { limitStatus, resetLimits } from './abuse.js';
 import { userLabel } from './context.js';
+import { onboardOnApproval, onboardUser, type OnboardResult } from './onboarding.js';
+import { getOutage, setMaintenance } from '../notifier/outage.js';
+import { collectNew, digestRecipients, digestText, sendDigest } from '../notifier/digest.js';
 import { checkRequest, requestFix } from './requestTools.js';
 import { defineTool, ToolError, type Tool, type ToolContext } from './tool.js';
 import {
@@ -81,23 +84,84 @@ const resetUserLimits = defineTool({
 
 const setUserStatus = defineTool({
   name: 'set_user_status',
-  description: 'Schaltet einen Nutzer frei (active), sperrt ihn (blocked) oder setzt ihn auf pending. Bei Freischaltung bekommt der Nutzer eine Begrüßung.',
+  description:
+    'Schaltet einen Nutzer frei (active), sperrt ihn (blocked) oder setzt ihn auf pending. Bei Freischaltung bekommt der Nutzer eine Begrüßung und – wenn eingestellt oder createAccount=true – automatisch ein Jellyfin-Konto samt Zugangsdaten.',
   schema: z.object({
     user: userRef,
     status: z.enum(['active', 'blocked', 'pending']),
     displayName: z.string().optional(),
+    createAccount: z.boolean().optional().describe('Jellyfin-Konto anlegen (überschreibt die Einstellung). Weglassen = Einstellung "Neue Nutzer".'),
   }),
-  async run({ user, status, displayName }, ctx) {
+  async run({ user, status, displayName, createAccount }, ctx) {
     const u = resolveUser(ctx, user);
     if (u.role === 'admin' && status !== 'active') throw new ToolError('Admins können nicht gesperrt werden.');
     ctx.repo.updateUser(u.id, { status, ...(displayName ? { display_name: displayName } : {}) });
+    let onboarding: OnboardResult | undefined;
     if (status === 'active' && u.status !== 'active') {
+      onboarding = await onboardOnApproval(ctx, ctx.repo.getUser(u.id)!, createAccount);
       ctx.dispatchEvent(
         u.id,
-        `Der Admin hat dich gerade freigeschaltet. Begrüße den Nutzer kurz${displayName ? ` (Name: ${displayName})` : ''}, stell dich vor und erkläre in 2-3 Sätzen, wobei du helfen kannst (Filme/Serien anfragen, Probleme melden, Benachrichtigung wenn Anfragen fertig sind). Beantworte ggf. auch seine erste Nachricht aus dem Verlauf.`,
+        `Der Admin hat dich gerade freigeschaltet. Begrüße den Nutzer kurz${displayName ? ` (Name: ${displayName})` : ''}, stell dich vor und erkläre in 2-3 Sätzen, wobei du helfen kannst (Filme/Serien anfragen, Probleme melden, Benachrichtigung wenn Anfragen fertig sind). Beantworte ggf. auch seine erste Nachricht aus dem Verlauf.${onboarding?.note ? ` ${onboarding.note}` : ''}`,
       );
     }
-    return { ok: true, user: userLabel(ctx.repo.getUser(u.id)!) };
+    return { ok: true, user: userLabel(ctx.repo.getUser(u.id)!), ...(onboarding ? { onboarding: onboardSummary(onboarding) } : {}) };
+  },
+});
+
+/** What the admin (and the LLM) sees about an onboarding – never the password. */
+function onboardSummary(r: OnboardResult) {
+  return {
+    jellyfinUser: r.jellyfin?.username,
+    seerrUserId: r.seerrUserId,
+    credentialsSent: !!r.jellyfin && !r.errors.some((e) => e.startsWith('Zugangsdaten')),
+    errors: r.errors.length ? r.errors : undefined,
+  };
+}
+
+const setMaintenanceTool = defineTool({
+  name: 'set_maintenance',
+  description:
+    'Setzt einen Wartungshinweis (z.B. "Server-Umbau, heute bis ca. 22 Uhr"): Nutzer, die schreiben, bekommen ihn höchstens alle 2 Stunden als feste Nachricht und eine Entwarnung, wenn er aufgehoben wird. off=true hebt ihn auf.',
+  schema: z.object({
+    message: z.string().max(500).optional().describe('Text für die Nutzer, kurz und freundlich'),
+    hours: z.number().positive().max(168).optional().describe('Hebt sich danach von selbst auf'),
+    off: z.boolean().optional(),
+  }),
+  async run({ message, hours, off }, ctx) {
+    if (!off && !message?.trim()) throw new ToolError('Text für den Wartungshinweis fehlt (oder off=true zum Aufheben).');
+    const r = await setMaintenance(ctx, off ? null : message!, hours);
+    return { ok: true, maintenance: r.maintenance ?? 'aufgehoben', usersNotified: r.notified, detectedOutage: getOutage(ctx.repo) ?? null };
+  },
+});
+
+const digestTool = defineTool({
+  name: 'weekly_digest',
+  description:
+    'Wochenrückblick ("Neu auf dem Server"): preview=true zeigt dir den Text und die Empfänger, preview=false verschickt ihn jetzt an alle, die ihn nicht abbestellt haben.',
+  schema: z.object({ preview: z.boolean().default(true) }),
+  async run({ preview }, ctx) {
+    if (preview) {
+      const text = digestText(await collectNew(ctx.services));
+      return { text: text ?? '(diese Woche nichts Neues – es würde nichts verschickt)', recipients: digestRecipients(ctx).length, scheduled: ctx.config.DIGEST_ENABLED ? `${ctx.config.DIGEST_DAY} ab ${ctx.config.DIGEST_HOUR} Uhr` : 'aus' };
+    }
+    if (ctx.turn.quiet) throw new ToolError('Aus der Web-Konsole wird nichts an Nutzer verschickt.');
+    const r = await sendDigest(ctx);
+    return { sent: r.sent, nothingNew: !r.text };
+  },
+});
+
+const createJellyfinAccount = defineTool({
+  name: 'create_jellyfin_account',
+  description:
+    'Legt für einen Nutzer ein Jellyfin-Konto an (Benutzername aus seinem Namen, zufälliges Passwort), verknüpft es (auch mit Jellyseerr) und schickt ihm die Zugangsdaten mit kurzer Anleitung direkt per WhatsApp. Du siehst das Passwort nicht.',
+  schema: z.object({ user: userRef }),
+  async run({ user }, ctx) {
+    if (!ctx.services.jellyfin) throw new ToolError('Jellyfin ist nicht konfiguriert.');
+    const u = resolveUser(ctx, user);
+    if (u.jellyfin_user_id || u.jellyfin_username) throw new ToolError(`${userLabel(u)} hat schon ein Jellyfin-Konto (${u.jellyfin_username ?? u.jellyfin_user_id}).`);
+    const r = await onboardUser(ctx, u);
+    if (!r.jellyfin) throw new ToolError(r.errors.join('; ') || 'Konto konnte nicht angelegt werden.');
+    return { ok: true, user: userLabel(ctx.repo.getUser(u.id)!), ...onboardSummary(r) };
   },
 });
 
@@ -331,6 +395,9 @@ const serverActivity = defineTool({
 });
 
 export const adminTools: Tool[] = [
+  createJellyfinAccount,
+  setMaintenanceTool,
+  digestTool,
   // shared media tools (run without per-user limits for admins)
   searchMedia,
   confirmMedia,

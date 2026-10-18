@@ -1,4 +1,4 @@
-import { ApiClient } from './http.js';
+import { ApiClient, type RecentItem } from './http.js';
 
 interface PlexMetadata {
   ratingKey: string;
@@ -55,6 +55,33 @@ export class PlexClient {
 
   async refreshItem(ratingKey: string) {
     await this.api.put(`/library/metadata/${ratingKey}/refresh`);
+  }
+
+  /** Movies and episodes added since `since`, newest first (Plex type 1 = movie, 4 = episode). */
+  async recentlyAdded(since: Date, limit = 300): Promise<RecentItem[]> {
+    const sections = (await this.sections()).filter((s) => s.type === 'movie' || s.type === 'show');
+    const lists = await Promise.all(
+      sections.map((s) =>
+        this.api.get<{ MediaContainer: { Metadata?: PlexMetadata[] } }>(`/library/sections/${s.key}/all`, {
+          type: s.type === 'movie' ? 1 : 4,
+          sort: 'addedAt:desc',
+          'X-Plex-Container-Start': 0,
+          'X-Plex-Container-Size': limit,
+        }),
+      ),
+    );
+    const cutoff = since.getTime() / 1000;
+    return lists
+      .flatMap((l) => l.MediaContainer.Metadata ?? [])
+      .filter((m) => (m.addedAt ?? 0) >= cutoff)
+      .sort((a, b) => (b.addedAt ?? 0) - (a.addedAt ?? 0))
+      .map((m) => ({
+        type: m.type === 'movie' ? 'movie' : 'episode',
+        title: m.type === 'episode' ? (m.grandparentTitle ?? m.title) : m.title,
+        year: m.year,
+        season: m.type === 'episode' ? m.parentIndex : undefined,
+        added: new Date((m.addedAt ?? 0) * 1000).toISOString(),
+      }));
   }
 
   async sections() {

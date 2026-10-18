@@ -1,4 +1,4 @@
-import { ApiClient } from './http.js';
+import { ApiClient, type RecentItem } from './http.js';
 
 interface JfMediaStream {
   Type: string;
@@ -70,6 +70,25 @@ export class JellyfinClient {
     return it ? summarizeItem(it, true) : undefined;
   }
 
+  /** Movies, series and episodes added since `since`, newest first. */
+  async recentlyAdded(since: Date, limit = 500): Promise<RecentItem[]> {
+    const res = await this.api.get<{ Items: JfItem[] }>('/Items', {
+      Recursive: true,
+      IncludeItemTypes: 'Movie,Series,Episode',
+      SortBy: 'DateCreated',
+      SortOrder: 'Descending',
+      Limit: limit,
+      Fields: 'DateCreated',
+    });
+    return res.Items.filter((it) => it.DateCreated && Date.parse(it.DateCreated) >= since.getTime()).map((it) => ({
+      type: it.Type === 'Movie' ? 'movie' : it.Type === 'Series' ? 'series' : 'episode',
+      title: it.Type === 'Episode' ? (it.SeriesName ?? it.Name) : it.Name,
+      year: it.ProductionYear,
+      season: it.Type === 'Episode' ? it.ParentIndexNumber : undefined,
+      added: it.DateCreated!,
+    }));
+  }
+
   async episodes(seriesId: string, season?: number) {
     const res = await this.api.get<{ Items: JfItem[] }>(`/Shows/${seriesId}/Episodes`, {
       season,
@@ -103,6 +122,12 @@ export class JellyfinClient {
       disabled: u.Policy?.IsDisabled ?? false,
       admin: u.Policy?.IsAdministrator ?? false,
     }));
+  }
+
+  /** New local user; libraries follow the server's default policy for new users. */
+  async createUser(name: string, password: string) {
+    const u = await this.api.post<{ Id: string; Name: string }>('/Users/New', { Name: name, Password: password });
+    return { id: u.Id, name: u.Name };
   }
 
   async sessions(userId?: string) {

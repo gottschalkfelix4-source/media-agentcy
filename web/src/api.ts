@@ -41,6 +41,12 @@ export async function api<T = unknown>(path: string, opts: { method?: string; bo
 
 // ---------------------------------------------------------------- types (mirror the server responses)
 
+export interface DisruptionState {
+  maintenance: { message: string; since: string; until?: string } | null;
+  outage: { services: string[]; since: string; error?: string } | null;
+  detection: boolean;
+}
+
 export type UserStatus = 'pending' | 'active' | 'blocked';
 
 export interface Runtime {
@@ -69,6 +75,7 @@ export interface User {
   created_at: string;
   last_seen_at: string | null;
   bot_paused: number;
+  digest: number;
 }
 
 export interface UserListItem extends User {

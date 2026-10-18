@@ -3,6 +3,9 @@ import type { BotRequest, Watch } from '../db/repo.js';
 import { normalizeTitle } from '../integrations/http.js';
 import type { SeerrRequest } from '../integrations/seerr.js';
 import { syncRequests } from './requestSync.js';
+import { maybeSendDigest } from './digest.js';
+import { checkDisruptions } from './outage.js';
+import { checkStuckRequests } from './stuck.js';
 
 const WATCH_TIMEOUT_HOURS = 72;
 const AVAILABLE = 5;
@@ -46,11 +49,14 @@ export class Poller {
     this.running = true;
     try {
       const results = [
+        await this.step('health', () => checkDisruptions(this.ctx)),
         await this.step('request-sync', () => this.syncRequests()),
         await this.step('bot-requests', () => this.checkBotRequests()),
         await this.step('seerr', () => this.checkSeerr()),
         await this.step('ombi', () => this.checkOmbi()),
         await this.step('watches', () => this.checkWatches()),
+        await this.step('stuck-requests', () => this.stuckRequests()),
+        await this.step('digest', () => maybeSendDigest(this.ctx)),
       ];
       this.lastRun = { at: new Date().toISOString(), ok: results.every(Boolean) };
     } finally {
@@ -96,7 +102,14 @@ export class Poller {
         };
   }
 
-  /** Requests made through the bot. */
+  /** Hängende Anfragen, at most once an hour (each request itself only once a day). */
+  private async stuckRequests() {
+    const last = this.ctx.repo.getKv('stuck_last_run');
+    if (last && Date.now() - Date.parse(last) < 3_600_000) return;
+    this.ctx.repo.setKv('stuck_last_run', new Date().toISOString());
+    await checkStuckRequests(this.ctx);
+  }
+
   /**
    * Website requests → bot_requests (before the checks, so already finished requests of newly linked users are
    * stored as done instead of being announced). A full pass hourly and whenever account links changed,

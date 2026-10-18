@@ -73,6 +73,16 @@ export class ApiClient {
   }
 }
 
+/** Something added to the library, for "new this week". */
+export interface RecentItem {
+  type: 'movie' | 'series' | 'episode';
+  /** Movie or series title (for episodes: the series). */
+  title: string;
+  year?: number;
+  season?: number;
+  added: string;
+}
+
 export function normalizeTitle(s: string) {
   return s
     .toLowerCase()

@@ -139,6 +139,9 @@ const MIGRATIONS: string[] = [
   ALTER TABLE bot_requests ADD COLUMN via TEXT;  -- NULL = asked the bot, 'web' = imported from the Jellyseerr/Ombi website
   CREATE INDEX idx_bot_requests_user ON bot_requests(user_id, source, external_id);
   `,
+  `
+  ALTER TABLE users ADD COLUMN digest INTEGER NOT NULL DEFAULT 1;  -- weekly "new on the server" message, 0 = opted out
+  `,
 ];
 
 export function openDatabase(file: string): DatabaseSync {

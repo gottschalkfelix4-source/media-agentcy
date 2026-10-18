@@ -134,6 +134,7 @@ export class WhatsAppClient implements Messenger {
       content.documentMessage?.caption ??
       '';
     const images: ImageInput[] = [];
+    let audio: IncomingMessage['audio'];
 
     if (content.imageMessage) {
       const size = Number(content.imageMessage.fileLength ?? 0);
@@ -147,7 +148,13 @@ export class WhatsAppClient implements Messenger {
       }
       if (!images.length) text = `${text}\n[Der Nutzer hat ein Bild geschickt, das du nicht sehen kannst]`.trim();
     } else if (content.audioMessage) {
-      text = '[Der Nutzer hat eine Sprachnachricht geschickt. Du kannst sie nicht anhören – bitte ihn freundlich, es kurz zu schreiben.]';
+      text = '[Sprachnachricht]';
+      const am = content.audioMessage;
+      audio = {
+        seconds: am.seconds ?? undefined,
+        mime: am.mimetype ?? 'audio/ogg; codecs=opus',
+        download: async () => new Uint8Array(await downloadMediaMessage(m, 'buffer', {})),
+      };
     } else if (content.videoMessage && !text) {
       text = '[Der Nutzer hat ein Video geschickt, das du nicht ansehen kannst]';
     } else if (content.stickerMessage) {
@@ -159,7 +166,7 @@ export class WhatsAppClient implements Messenger {
 
     const waId = await this.resolveWaId(jid, m.key.remoteJidAlt);
     await this.sock?.readMessages([m.key]).catch(() => undefined);
-    await this.onMessage?.({ waId, jid, pushName: m.pushName ?? undefined, text, images: images.length ? images : undefined });
+    await this.onMessage?.({ waId, jid, pushName: m.pushName ?? undefined, text, images: images.length ? images : undefined, audio });
   }
 
   /** Maps a chat JID (phone-number or LID based) to the phone number digits. */

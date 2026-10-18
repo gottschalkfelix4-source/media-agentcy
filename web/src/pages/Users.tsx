@@ -17,6 +17,7 @@ import {
   RuntimeChip,
   Segmented,
   Select,
+  Toggle,
   USER_STATUS,
   StatusBadge,
   fmtRelative,
@@ -33,11 +34,21 @@ function AddUserModal({ open, onClose }: { open: boolean; onClose: () => void })
   const [phone, setPhone] = useState('');
   const [name, setName] = useState('');
   const [status, setStatus] = useState('active');
+  const [onboard, setOnboard] = useState(true);
+  const accounts = useQuery({ queryKey: ['media-accounts'], queryFn: () => api<{ jellyfin?: unknown[] }>('/media-accounts'), staleTime: 300_000, enabled: open });
+  const canOnboard = !!accounts.data?.jellyfin && status === 'active';
+  const withAccount = canOnboard && onboard;
   const create = useMutation({
-    mutationFn: () => api<User>('/users', { body: { phone, display_name: name || undefined, status } }),
+    mutationFn: () =>
+      api<User & { onboarding?: { jellyfinUser?: string; errors: string[] } }>('/users', {
+        body: { phone, display_name: name.trim() || undefined, status, onboard: withAccount || undefined },
+      }),
     onSuccess: (u) => {
       void queryClient.invalidateQueries({ queryKey: ['users'] });
-      toast('Nutzer angelegt');
+      if (withAccount) void queryClient.invalidateQueries({ queryKey: ['media-accounts'] });
+      const o = u.onboarding;
+      if (o?.errors.length) toast(`Nutzer angelegt – ${o.errors.join('; ')}`, 'danger');
+      else toast(o?.jellyfinUser ? `Nutzer angelegt, Jellyfin-Konto ${o.jellyfinUser} verschickt` : 'Nutzer angelegt');
       onClose();
       navigate(`/users/${u.id}`);
     },
@@ -53,8 +64,8 @@ function AddUserModal({ open, onClose }: { open: boolean; onClose: () => void })
           <Button variant="ghost" onClick={onClose}>
             Abbrechen
           </Button>
-          <Button variant="primary" loading={create.isPending} disabled={!phone} onClick={() => create.mutate()}>
-            Anlegen
+          <Button variant="primary" loading={create.isPending} disabled={!phone || (withAccount && !name.trim())} onClick={() => create.mutate()}>
+            {withAccount ? 'Anlegen & verschicken' : 'Anlegen'}
           </Button>
         </>
       }
@@ -63,7 +74,7 @@ function AddUserModal({ open, onClose }: { open: boolean; onClose: () => void })
         <Field label="WhatsApp-Nummer" help="Mit Ländervorwahl, z. B. 49 151 12345678 – Leerzeichen und + werden ignoriert.">
           <Input autoFocus inputMode="tel" placeholder="+49 151 12345678" value={phone} onChange={(e) => setPhone(e.target.value)} />
         </Field>
-        <Field label="Name" help="Optional – sonst wird der WhatsApp-Name übernommen.">
+        <Field label="Name" help={withAccount ? 'Daraus wird der Jellyfin-Benutzername (z. B. „Jörg Müller“ → joerg.mueller).' : 'Optional – sonst wird der WhatsApp-Name übernommen.'}>
           <Input value={name} onChange={(e) => setName(e.target.value)} />
         </Field>
         <Field label="Status">
@@ -73,7 +84,16 @@ function AddUserModal({ open, onClose }: { open: boolean; onClose: () => void })
             <option value="blocked">Gesperrt</option>
           </Select>
         </Field>
-        <p className="text-xs text-fg-3">Der Nutzer bekommt erst eine Nachricht, wenn er dem Bot selbst schreibt.</p>
+        {canOnboard && (
+          <label className="flex items-start gap-2 text-[13px]">
+            <Toggle checked={onboard} onChange={setOnboard} label="Jellyfin-Konto anlegen" />
+            <span>
+              Jellyfin-Konto anlegen & Zugangsdaten schicken
+              <span className="block text-xs text-fg-3">Zufallspasswort, Verknüpfung mit Jellyseerr, Anleitung und Begrüßung per WhatsApp. Das Passwort sieht nur der Nutzer.</span>
+            </span>
+          </label>
+        )}
+        {!withAccount && <p className="text-xs text-fg-3">Der Nutzer bekommt erst eine Nachricht, wenn er dem Bot selbst schreibt.</p>}
       </div>
     </Modal>
   );

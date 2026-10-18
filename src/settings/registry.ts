@@ -29,8 +29,15 @@ export interface SettingGroup {
 export const GROUPS: SettingGroup[] = [
   { id: 'general', label: 'Allgemein', description: 'Wie sich der Bot nennt und wen er als Admin kennt.' },
   { id: 'access', label: 'Zugang', description: 'Wer mit dem Bot schreiben darf.' },
+  { id: 'onboarding', label: 'Neue Nutzer', description: 'Was passiert, wenn du jemanden freischaltest.' },
   { id: 'abuse', label: 'Missbrauchsschutz', description: 'Damit niemand den Bot als kostenlose KI für alles Mögliche nutzt. Gilt nicht für Admins. 0 = kein Limit.' },
   { id: 'llm', label: 'KI-Anbieter', description: 'Modell und Anbieter, mit denen der Bot denkt.', test: 'llm' },
+  {
+    id: 'voice',
+    label: 'Sprachnachrichten',
+    description:
+      'Sprachnachrichten werden in Text umgewandelt (OpenAI-kompatibler Whisper-Endpoint). OpenRouter kann das nicht – nimm z. B. Groq (https://api.groq.com/openai/v1, Modell whisper-large-v3-turbo, günstig und schnell), OpenAI (whisper-1) oder einen eigenen faster-whisper-Server.',
+  },
   { id: 'prompt', label: 'Persönlichkeit', description: 'Zusätzliche Anweisungen, die der Bot in jedem Nutzer-Gespräch befolgt.' },
   { id: 'jellyfin', label: 'Jellyfin', test: 'jellyfin' },
   { id: 'plex', label: 'Plex', test: 'plex' },
@@ -40,6 +47,8 @@ export const GROUPS: SettingGroup[] = [
   { id: 'radarr', label: 'Radarr', test: 'radarr' },
   { id: 'autofix', label: 'Anfragen & Auto-Fix', description: 'Limits und was der Bot selbstständig reparieren darf.' },
   { id: 'notify', label: 'Benachrichtigungen' },
+  { id: 'digest', label: 'Wochenrückblick', description: '„Neu auf dem Server“: einmal pro Woche eine feste Nachricht (ohne KI) mit den neuen Filmen und Folgen. Nutzer können ihn mit „Wochenrückblick aus“ abbestellen.' },
+  { id: 'disruption', label: 'Störungen & Wartung', description: 'Bekannte Störungen beantwortet der Bot mit einem festen Hinweis, statt jeden einzeln zu diagnostizieren. Den Wartungshinweis setzt du auf der Übersicht oder per Chat.' },
   { id: 'tuning', label: 'Feintuning', description: 'Gedächtnis und Verarbeitung. Normalerweise nicht nötig.' },
   { id: 'system', label: 'System', description: 'Server und Sicherheit.' },
 ];
@@ -87,6 +96,23 @@ export const SETTINGS: SettingDef[] = [
   },
 
   {
+    key: 'ONBOARD_JELLYFIN',
+    group: 'onboarding',
+    label: 'Jellyfin-Konto automatisch anlegen',
+    type: 'bool',
+    default: 'false',
+    help: 'Beim Freischalten legt der Bot ein Jellyfin-Konto mit Zufallspasswort an, verknüpft es (auch mit Jellyseerr) und schickt die Zugangsdaten per WhatsApp. Nur für Nutzer, die noch kein Jellyfin-Konto verknüpft haben.',
+  },
+  {
+    key: 'ONBOARD_GUIDE',
+    group: 'onboarding',
+    label: 'Zusatz zur Anleitung',
+    type: 'textarea',
+    placeholder: 'z. B. „Auf dem Fernseher am besten die Jellyfin-App aus dem TV-Store nehmen. Bei Fragen einfach hier schreiben.“',
+    help: 'Wird an die Nachricht mit den Zugangsdaten angehängt.',
+  },
+
+  {
     key: 'OFF_TOPIC_LIMIT',
     group: 'abuse',
     label: 'Themenfremde Anfragen bis zur Pause',
@@ -101,6 +127,19 @@ export const SETTINGS: SettingDef[] = [
   { key: 'LLM_PROVIDER', group: 'llm', label: 'Anbieter', type: 'select', options: PROVIDERS, default: 'openrouter' },
   { key: 'LLM_BASE_URL', group: 'llm', label: 'Endpoint-URL', type: 'url', placeholder: 'http://ollama:11434/v1', help: 'Nur für „Eigener Endpoint“ nötig. Leer = Standard des Anbieters.' },
   { key: 'LLM_API_KEY', group: 'llm', label: 'API-Key', type: 'secret', help: 'Nicht nötig beim ChatGPT-Login.' },
+  { key: 'VOICE_ENABLED', group: 'voice', label: 'Sprachnachrichten verstehen', type: 'bool', default: 'false' },
+  {
+    key: 'STT_BASE_URL',
+    group: 'voice',
+    label: 'Endpoint',
+    type: 'url',
+    placeholder: 'https://api.groq.com/openai/v1',
+    help: 'Basis-URL ohne /audio/transcriptions. Leer = KI-Anbieter von oben, falls das OpenAI ist.',
+  },
+  { key: 'STT_API_KEY', group: 'voice', label: 'API-Key', type: 'secret', help: 'Leer = API-Key des KI-Anbieters, falls das OpenAI ist.' },
+  { key: 'STT_MODEL', group: 'voice', label: 'Modell', type: 'text', default: 'whisper-1', help: 'Groq: whisper-large-v3-turbo · OpenAI: whisper-1 oder gpt-4o-mini-transcribe' },
+  { key: 'VOICE_MAX_SECONDS', group: 'voice', label: 'Maximale Länge (Sekunden)', type: 'int', default: '120', help: 'Längere Sprachnachrichten werden nicht umgewandelt, der Bot bittet um eine kürzere. 0 = kein Limit.' },
+
   { key: 'LLM_MODEL', group: 'llm', label: 'Modell', type: 'text', default: 'openai/gpt-4.1-mini', help: 'Muss Tool-Calling können.' },
   { key: 'LLM_MODEL_ADMIN', group: 'llm', label: 'Modell für den Admin-Chat', type: 'text', help: 'Optional, z. B. ein stärkeres Modell. Leer = wie oben.' },
   { key: 'LLM_TEMPERATURE', group: 'llm', label: 'Temperatur', type: 'float', placeholder: 'Standard des Modells' },
@@ -132,7 +171,42 @@ export const SETTINGS: SettingDef[] = [
 
   { key: 'AUTOFIX_REPLACE_FILE', group: 'autofix', label: 'Defekte Dateien selbst ersetzen', type: 'bool', default: 'true', help: 'Löscht die Datei und sucht eine neue. Höchstens einmal pro Ticket.' },
   { key: 'AUTOFIX_MAX_REPLACEMENTS_PER_DAY', group: 'autofix', label: 'Max. Ersetzungen pro Nutzer und Tag', type: 'int', default: '3' },
-  { key: 'ADMIN_NOTIFY_AUTOFIX', group: 'autofix', label: 'Mich bei jedem Ersetzen informieren', type: 'bool', default: 'true' },
+  { key: 'ADMIN_NOTIFY_AUTOFIX', group: 'autofix', label: 'Mich bei jedem Ersetzen informieren', type: 'bool', default: 'true', help: 'Gilt auch für Anfragen, die der Bot von sich aus wieder anstößt.' },
+  {
+    key: 'STUCK_REQUEST_DAYS',
+    group: 'autofix',
+    label: 'Hängende Anfragen selbst anstoßen nach (Tagen)',
+    type: 'int',
+    default: '3',
+    help: 'Offene Anfragen, die so lange nicht fertig sind, prüft der Bot einmal am Tag von sich aus: neu suchen, Mediathek einlesen oder Anfrage wiederholen. Was er nicht lösen kann, bekommst du gesammelt. 0 = aus.',
+  },
+
+  { key: 'DIGEST_ENABLED', group: 'digest', label: 'Wochenrückblick verschicken', type: 'bool', default: 'false' },
+  {
+    key: 'DIGEST_DAY',
+    group: 'digest',
+    label: 'Wochentag',
+    type: 'select',
+    default: 'fr',
+    options: [
+      { value: 'mo', label: 'Montag' },
+      { value: 'di', label: 'Dienstag' },
+      { value: 'mi', label: 'Mittwoch' },
+      { value: 'do', label: 'Donnerstag' },
+      { value: 'fr', label: 'Freitag' },
+      { value: 'sa', label: 'Samstag' },
+      { value: 'so', label: 'Sonntag' },
+    ],
+  },
+  { key: 'DIGEST_HOUR', group: 'digest', label: 'Uhrzeit (Stunde, 0–23)', type: 'int', default: '18', help: 'Zeitzone kommt aus der Umgebungsvariable TZ des Containers (z. B. Europe/Berlin).' },
+  {
+    key: 'OUTAGE_DETECTION',
+    group: 'disruption',
+    label: 'Ausfälle von Jellyfin/Plex automatisch erkennen',
+    type: 'bool',
+    default: 'true',
+    help: 'Der Bot pingt die Mediaserver bei jeder Prüfrunde. Zweimal hintereinander nicht erreichbar = Störung: Du bekommst eine Nachricht, Nutzer einen festen Hinweis (ohne KI) und eine Entwarnung, sobald es wieder läuft.',
+  },
 
   { key: 'NOTIFY_POLL_MINUTES', group: 'notify', label: 'Prüfintervall (Minuten)', type: 'int', default: '5', help: 'Wie oft auf fertige Anfragen und Auto-Fixes geprüft wird.' },
   {

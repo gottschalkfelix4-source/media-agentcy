@@ -190,3 +190,36 @@ test('logout ends the session', async () => {
   await req('POST', '/auth/logout', {});
   assert.equal((await req('GET', '/overview')).status, 401);
 });
+
+test('create user with Jellyfin account: credentials only via WhatsApp, welcome follows', async () => {
+  const prev = app.ctx.services.jellyfin;
+  const passwords: string[] = [];
+  app.ctx.services.jellyfin = {
+    users: async () => [],
+    async createUser(name: string, password: string) {
+      passwords.push(password);
+      return { id: 'jf-lina', name };
+    },
+  } as never;
+  const login = await req('POST', '/auth/login', { password: 'correct horse' });
+  cookie = (login.headers.get('set-cookie') ?? '').split(';')[0];
+  try {
+    assert.equal((await req('POST', '/users', { phone: '4915100000077', onboard: true })).status, 400, 'needs a name for the username');
+    const r = await req('POST', '/users', { phone: '4915100000077', display_name: 'Lina Schmidt', onboard: true });
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.json.onboarding, { jellyfinUser: 'lina.schmidt', errors: [] });
+    assert.equal(r.json.jellyfin_user_id, 'jf-lina');
+    assert.ok(!JSON.stringify(r.json).includes(passwords[0]), 'API response has no password');
+    const toLina = () => sent.filter((s) => s.to === '4915100000077').map((s) => s.text);
+    assert.match(toLina()[0], new RegExp(`Passwort: ${passwords[0]}`));
+    const start = Date.now();
+    while (!toLina().includes('Bot-Antwort') && Date.now() - start < 3000) await new Promise((res) => setTimeout(res, 20));
+    assert.ok(toLina().includes('Bot-Antwort'), 'welcome from the bot');
+
+    const plain = await req('POST', '/users', { phone: '4915100000078', display_name: 'Ohne Konto' });
+    assert.equal(plain.json.onboarding, undefined);
+    assert.equal(sent.filter((s) => s.to === '4915100000078').length, 0, 'no message without onboarding');
+  } finally {
+    app.ctx.services.jellyfin = prev;
+  }
+});

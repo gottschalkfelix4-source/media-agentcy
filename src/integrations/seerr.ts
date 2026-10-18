@@ -174,6 +174,11 @@ export class SeerrClient {
     return res.results;
   }
 
+  /** Creates Seerr users for Jellyfin accounts (only works when Seerr uses Jellyfin/Emby as media server). */
+  async importFromJellyfin(jellyfinUserIds: string[]) {
+    return this.api.post<{ id: number; jellyfinUsername?: string }[]>('/user/import-from-jellyfin', { jellyfinUserIds });
+  }
+
   async findUserByName(name: string) {
     const n = name.toLowerCase();
     const users = await this.users();

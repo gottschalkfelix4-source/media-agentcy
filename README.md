@@ -25,7 +25,12 @@
 | 🎬 **Medienwünsche** | „Kannst du Dune 2 besorgen?“ → Suche über Jellyseerr/Overseerr oder Ombi, der Bot schickt Cover, Titel und Erscheinungsdatum und fragt erst nach einem „Ja“ an (keine Anfragen für den falschen Film), Anfrage im Namen des Nutzers, Tageslimit pro Nutzer |
 | 🔍 **Anfragen nachverfolgen** | „Was ist mit meiner Anfrage?“ → der Bot prüft Jellyseerr, Radarr/Sonarr und die Mediathek, erklärt in einfachen Worten, wo es hängt, und hilft gleich: neu suchen, Mediathek neu einlesen, Anfrage wiederholen oder den Admin erinnern (mit Sperrfrist gegen Dauerschleifen) |
 | 🔔 **Benachrichtigungen** | Sobald eine Anfrage verfügbar ist, bekommt der Nutzer eine persönliche WhatsApp, auch für Anfragen von der Jellyseerr-Webseite. Die Nachricht sagt nur „jetzt verfügbar“, ohne Jellyfin und Plex zu unterscheiden |
+| ⏳ **Hängende Anfragen** | Liegt eine Anfrage länger als 3 Tage, prüft der Bot sie selbst und stößt an, was er kann (neu suchen, Mediathek einlesen, Anfrage wiederholen). Du bekommst eine Sammelnachricht: was er angestoßen hat und was dich braucht |
 | 🌐 **Webseiten-Anfragen zuordnen** | Anfragen von der Jellyseerr-/Ombi-Webseite landen automatisch beim richtigen Nutzer (über Jellyseerr-ID, Jellyfin-, Plex- oder Ombi-Name) und erscheinen unter *Anfragen*. Schon Fertiges wird still abgelegt, Wartendes gemeldet, sobald es da ist |
+| 🎟️ **Zugang einrichten** | Beim Freischalten legt der Bot auf Wunsch ein Jellyfin-Konto an, übernimmt es nach Jellyseerr und schickt dem Nutzer Benutzername, Passwort und App-Anleitung per WhatsApp. Das Passwort geht nie durch die KI |
+| 🚧 **Störungen & Wartung** | Ist Jellyfin oder Plex nicht erreichbar, merkt der Bot das, sagt dir Bescheid und beantwortet Nutzer mit einem festen Hinweis statt Tickets und Diagnosen. Wartung kündigst du per Klick oder im Admin-Chat an. Danach bekommen alle Betroffenen eine Entwarnung |
+| 📬 **Wochenrückblick** | Einmal pro Woche „Neu auf dem Server“: neue Filme und Folgen als feste Nachricht ohne KI-Kosten. Nutzer bestellen ihn mit „Wochenrückblick aus“ ab |
+| 🎙️ **Sprachnachrichten** | Sprachnachrichten werden über einen Whisper-Endpoint (Groq, OpenAI oder lokal) in Text umgewandelt, der Bot antwortet ganz normal |
 | 🛡️ **Missbrauchsschutz** | Der Bot bleibt beim Thema Mediaserver. Hausaufgaben, Texte, Code und Co. lehnt er ab, nach 3 Versuchen pausiert er für die Person bis zu 24 h und sagt dir Bescheid. Dazu Tageslimits für Nachrichten und Tokens und eine Längenbegrenzung für eingefügte Texte |
 | 🛠️ **Problemmeldungen** | Ticket → Diagnose über Radarr/Sonarr/Jellyfin/Plex → kleine Fehler selbst beheben (Datei ersetzen, fehlende Folgen suchen, Rescan, Metadaten) → Nutzer informieren, wenn die neue Datei da ist |
 | 🚨 **Eskalation** | Größere Probleme gehen per WhatsApp an dich. Du sprichst im selben Chat mit dem Agenten, er richtet den Nutzern deine Antworten aus |
@@ -118,6 +123,7 @@ Als URLs funktionieren die internen Adressen, z. B. `http://192.168.1.10:8096` f
 1. Schreib dem Bot von deiner Admin-Nummer „Hi“. Du wirst automatisch als Admin angelegt.
 2. Schreibt eine neue Nummer, bekommst du „🆕 Neue Nummer …“ per WhatsApp, und sie erscheint in der Oberfläche unter **Nutzer**.
 3. Freischalten per Klick oder im Admin-Chat, z. B. *„Schalte #2 frei, das ist Max, Jellyfin-User max“*. Der Agent schaltet frei, verknüpft Jellyfin- und Jellyseerr-Konto und begrüßt Max.
+4. Hat die Person noch kein Konto: *„Schalte #3 frei und leg ihr ein Jellyfin-Konto an“* oder im Nutzer-Detail **Jellyfin-Konto anlegen**. Der Bot erstellt das Konto, übernimmt es nach Jellyseerr und schickt die Zugangsdaten samt App-Anleitung per WhatsApp. Mit **Einstellungen → Neue Nutzer → Jellyfin-Konto automatisch anlegen** passiert das bei jeder Freischaltung. Legst du jemanden selbst unter **Nutzer → Nutzer hinzufügen** an, gibt es dafür einen Schalter im Dialog (standardmäßig an): Konto, Zugangsdaten und Begrüßung gehen dann sofort raus.
 
 **Oder alle auf einmal importieren:** **Nutzer** → **Aus Medienserver importieren**. Die Seite listet alle Konten aus Jellyfin, Plex und Jellyseerr. Konten derselben Person werden zusammengeführt (über Jellyseerr, Benutzername oder E-Mail). Du trägst nur noch die WhatsApp-Nummern ein (mit Ländervorwahl, z. B. `+49 151 …`) und klickst **Importieren**. Optional schreibt der Bot jedem eine kurze Begrüßung. Ist eine Nummer schon angelegt, werden nur die Konten verknüpft. Plex-Nutzer kommen von plex.tv (dein Konto und die Freunde, mit denen du den Server teilst).
 
@@ -185,7 +191,7 @@ docker compose up -d --build
 
 ## Web-Oberfläche
 
-- **Übersicht**: WhatsApp-Status, aktive Bots, wartende Nutzer, eskalierte Tickets, Nachrichten- und Token-Verbrauch, Zustand der Dienste, was gerade läuft
+- **Übersicht**: WhatsApp-Status, aktive Bots, wartende Nutzer, eskalierte Tickets, Nachrichten- und Token-Verbrauch, Zustand der Dienste, was gerade läuft. Dazu die Karte *Störungen & Wartung*: erkannte Ausfälle sehen, Wartungshinweis mit Dauer setzen, aufheben und Entwarnung schicken
 - **Nutzer**: alle Nummern mit Status (wartet / aktiv / gesperrt) und Live-Status des jeweiligen Bots (antwortet, sammelt Nachrichten, pausiert, Fehler). Freischalten, sperren, löschen, anlegen
 - **Nutzer importieren**: Konten aus Jellyfin, Plex und Jellyseerr übernehmen, pro Person zusammengeführt, WhatsApp-Nummer eintragen. Bestehende Nutzer werden erkannt und nur verknüpft
 - **Nutzer-Detail**: Chatverlauf wie in WhatsApp, Gedächtnis (Zusammenfassung und Fakten bearbeiten), verknüpfte Konten, Tickets, Anfragen, Token-Verbrauch, laufende Wiedergabe
@@ -212,6 +218,9 @@ Ein in der Oberfläche gesetzter Wert hat Vorrang vor Umgebungsvariablen. „Zur
 - „Was weißt du über Lisa?“ / „Merk dir bei Lisa: nutzt einen Fire TV Stick“
 - „Schick allen: Heute 22 Uhr Wartung, ca. 30 min“
 - „Limits von Max zurücksetzen“
+- „Leg Lisa ein Jellyfin-Konto an“
+- „Heute Abend Wartung bis ca. 23 Uhr, Festplattentausch“ / „Wartung ist vorbei“
+- „Zeig mir den Wochenrückblick“ / „Schick den Wochenrückblick jetzt raus“
 
 Befehle ohne KI: `/hilfe`, `/reset` (Verlauf leeren), `/status` (Admin: Dienste prüfen).
 
@@ -223,7 +232,7 @@ WhatsApp (Baileys) ──► Router ──► Agent (LLM + Tools) ──► Jell
    │                    │  ├─ bündelt Nachrichten, 1 Warteschlange/Nutzer   ▼
    │                    │  └─ Nutzer-Agent  |  Admin-Agent           SQLite: Nutzer, Gedächtnis, Tickets,
    └──── Antworten ◄────┘                                            Anfragen, Auto-Fix-Watches
-Poller (alle 5 min): fertige Anfragen + Auto-Fix-Ergebnisse → Benachrichtigung
+Poller (alle 5 min): Erreichbarkeit, fertige Anfragen, Auto-Fix-Ergebnisse, hängende Anfragen, Wochenrückblick
 Web-Oberfläche ──► dieselbe Datenbank, Live-Events, Einstellungen (überlagern die Umgebung)
 ```
 
@@ -236,6 +245,9 @@ Der **Admin-Agent** (deine Nummer) kann zusätzlich Nutzer freischalten, sperren
 - Nutzer-Agent und Admin-Agent sind getrennt. Was ein Agent darf, hängt an der Absendernummer, nicht am Text der Nachricht. Prompt-Injection von Nutzern bekommt deshalb keinen Zugriff auf Admin-Tools.
 - **Missbrauchsschutz** (Einstellungen → *Missbrauchsschutz*, gilt nicht für Admins, 0 = aus): themenfremde Anfragen bis zur Pause (`OFF_TOPIC_LIMIT`, Standard 3), Nachrichten pro Tag (`MESSAGES_PER_DAY`, 60), Tokens pro Tag (`TOKENS_PER_DAY`, 500.000) und Zeichen pro Nachricht (`MAX_MESSAGE_CHARS`, 1500). Während einer Pause kostet der Bot nichts: Nachrichten werden nur gespeichert, die Person bekommt einmal einen festen Hinweis.
 - `replace_file` löscht die aktuelle Datei, bevor neu gesucht wird. Das ist abschaltbar (`AUTOFIX_REPLACE_FILE=false`), läuft höchstens einmal pro Ticket und unterliegt einem Tageslimit. Findet sich nach 72 h nichts, geht es automatisch an dich.
+- Beim **Kontoanlegen** erzeugt der Bot ein zufälliges Passwort und schickt es direkt per WhatsApp. Es landet weder bei der KI noch in der Oberfläche, im Verlauf steht nur `••••••`. Der Nutzer sollte es in Jellyfin ändern.
+- **Sprachnachrichten** gehen an den eingestellten Transkriptions-Dienst (Einstellungen → *Sprachnachrichten*), und zwar erst, nachdem die Nummer als freigeschalteter Nutzer erkannt wurde. Mit einem lokalen faster-whisper-Server verlassen sie dein Netz nicht.
+- Für **Wochenrückblick** und Wartungs-Ablauf zählt die Zeitzone des Containers (`TZ`, z. B. `Europe/Berlin`).
 - Baileys ist eine **inoffizielle** WhatsApp-Bibliothek. Der Bot verschickt nur Antworten und Benachrichtigungen, mit Abstand zwischen den Nachrichten. Für Massen-Broadcasts ist er nicht gedacht.
 - Der **ChatGPT-Login** nutzt die interne Codex-Schnittstelle von OpenAI. Sie ist nicht offiziell und kann sich jederzeit ändern.
 - Gegen echte Server noch nicht getestet: Ombi (deren API ist uneinheitlich), Plex-Details, ChatGPT-Anbieter. Die automatischen Tests decken Jellyseerr, Radarr und Jellyfin mit einem Fake-Server ab.

@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { AlertTriangle, Bot, Clapperboard, Coins, LifeBuoy, MessageSquare, RefreshCw, Users } from 'lucide-react';
-import { api, type Overview } from '../api';
+import { AlertTriangle, Bot, Clapperboard, Coins, LifeBuoy, MessageSquare, RefreshCw, Users, Wrench } from 'lucide-react';
+import { useState } from 'react';
+import { api, queryClient, type DisruptionState, type Overview } from '../api';
 import { WA_STATE } from '../components/Layout';
 import { ActivityList } from './Activity';
 import {
@@ -18,8 +19,10 @@ import {
   RelTime,
   RuntimeChip,
   SEVERITY,
+  Select,
   Stat,
   StatusBadge,
+  Textarea,
   fmtDuration,
   fmtNum,
   fmtRelative,
@@ -36,6 +39,95 @@ const SERVICE_NAMES: Record<string, string> = { jellyfin: 'Jellyfin', plex: 'Ple
 interface NowPlaying {
   sessions: { server: string; user?: string; userId?: number; title?: string; device?: string; method?: string; paused?: boolean }[];
   errors: string[];
+}
+
+const SERVICE_LABEL = (s: string) => SERVICE_NAMES[s] ?? s;
+
+function MaintenanceCard() {
+  const q = useQuery({ queryKey: ['maintenance'], queryFn: () => api<DisruptionState>('/maintenance'), refetchInterval: 60_000 });
+  const [message, setMessage] = useState('');
+  const [hours, setHours] = useState('');
+  const save = useMutation({
+    mutationFn: (b: { message: string | null; hours?: number }) => api<DisruptionState & { notified?: number }>('/maintenance', { method: 'PUT', body: b }),
+    onSuccess: (r) => {
+      queryClient.setQueryData(['maintenance'], r);
+      setMessage('');
+      setHours('');
+      toast(r.maintenance ? 'Wartungshinweis ist aktiv' : `Wartungshinweis aufgehoben${r.notified ? ` – ${r.notified} Nutzer haben eine Entwarnung bekommen` : ''}`);
+    },
+    onError: toastError,
+  });
+  const m = q.data?.maintenance;
+  const o = q.data?.outage;
+  return (
+    <Card title="Störungen & Wartung">
+      {q.isPending ? (
+        <Loading />
+      ) : (
+        <div className="space-y-3 text-[13px]">
+          {o ? (
+            <div className="flex items-start gap-2.5 rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-danger">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+              <span>
+                <strong>{o.services.map(SERVICE_LABEL).join(' und ')}</strong> nicht erreichbar (erkannt <RelTime value={o.since} />). Nutzer bekommen automatisch einen Hinweis.
+              </span>
+            </div>
+          ) : (
+            <p className="flex items-center gap-2 text-fg-2">
+              <Dot tone={q.data?.detection ? 'ok' : 'neutral'} />
+              {q.data?.detection ? 'Keine Störung erkannt' : 'Automatische Erkennung ist aus'}
+            </p>
+          )}
+          {m ? (
+            <div className="space-y-2">
+              <div className="rounded-lg border border-warn/30 bg-warn-soft px-3 py-2 text-warn">
+                <div className="flex items-center gap-1.5 font-medium">
+                  <Wrench className="size-3.5" /> Wartungshinweis aktiv
+                </div>
+                <p className="mt-1 whitespace-pre-wrap text-fg">{m.message}</p>
+                <p className="mt-1 text-xs text-fg-3">
+                  gesetzt <RelTime value={m.since} />
+                  {m.until && (
+                    <>
+                      {' '}
+                      · endet <RelTime value={m.until} />
+                    </>
+                  )}
+                </p>
+              </div>
+              <Button size="sm" loading={save.isPending} onClick={() => save.mutate({ message: null })}>
+                Aufheben & Entwarnung senden
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Textarea rows={2} value={message} maxLength={500} onChange={(e) => setMessage(e.target.value)} placeholder="z. B. Server-Umbau heute Abend, bis ca. 22 Uhr kann es haken." />
+              <div className="flex flex-wrap gap-2">
+                <Select value={hours} onChange={(e) => setHours(e.target.value)} className="min-w-44 flex-1">
+                  <option value="">bis ich ihn aufhebe</option>
+                  <option value="1">für 1 Stunde</option>
+                  <option value="3">für 3 Stunden</option>
+                  <option value="12">für 12 Stunden</option>
+                  <option value="24">für 1 Tag</option>
+                </Select>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  disabled={!message.trim()}
+                  loading={save.isPending}
+                  icon={<Wrench className="size-3.5" />}
+                  onClick={() => save.mutate({ message: message.trim(), ...(hours ? { hours: Number(hours) } : {}) })}
+                >
+                  Aktivieren
+                </Button>
+              </div>
+              <p className="text-xs text-fg-3">Wer schreibt, bekommt den Hinweis (höchstens alle 2 Stunden) und eine Entwarnung, wenn du ihn aufhebst.</p>
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
+  );
 }
 
 function ServicesCard() {
@@ -301,6 +393,7 @@ export function Dashboard() {
               </Button>
             </div>
           </Card>
+          <MaintenanceCard />
           <ServicesCard />
           <NowPlayingCard />
         </div>

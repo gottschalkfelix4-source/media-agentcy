@@ -8,6 +8,7 @@ import {
   Clapperboard,
   Hand,
   Inbox,
+  KeyRound,
   LifeBuoy,
   MessageSquare,
   Play,
@@ -353,6 +354,17 @@ function ProfileTab({ d }: { d: UserDetail }) {
 
   const jf = accounts.data?.jellyfin;
   const seerr = accounts.data?.seerr;
+  const [confirmOnboard, setConfirmOnboard] = useState(false);
+  const onboard = useMutation({
+    mutationFn: () => api<{ jellyfinUser?: string; errors: string[] }>(`/users/${u.id}/onboard`, { body: {} }),
+    onSuccess: (r) => {
+      setConfirmOnboard(false);
+      toast(r.errors.length ? `Konto ${r.jellyfinUser} angelegt – ${r.errors.join('; ')}` : `Konto ${r.jellyfinUser} angelegt, Zugangsdaten verschickt`);
+      invalidateUser(u.id);
+      void queryClient.invalidateQueries({ queryKey: ['media-accounts'] });
+    },
+    onError: toastError,
+  });
 
   return (
     <div className="grid gap-5 lg:grid-cols-3">
@@ -389,6 +401,11 @@ function ProfileTab({ d }: { d: UserDetail }) {
             ) : (
               <Input value={form.jellyfin_username} onChange={(e) => set('jellyfin_username')(e.target.value)} placeholder="Benutzername" />
             )}
+            {jf && !u.jellyfin_username && !form.jellyfin_username && (
+              <Button size="sm" className="mt-2" icon={<KeyRound className="size-3.5" />} onClick={() => setConfirmOnboard(true)}>
+                Jellyfin-Konto anlegen
+              </Button>
+            )}
           </Field>
           <Field label="Plex-Benutzer">
             <Input value={form.plex_username} onChange={(e) => set('plex_username')(e.target.value)} placeholder="Plex-Benutzername" />
@@ -416,6 +433,16 @@ function ProfileTab({ d }: { d: UserDetail }) {
             {e}
           </p>
         ))}
+        <ConfirmDialog
+          open={confirmOnboard}
+          title="Jellyfin-Konto anlegen?"
+          confirmLabel="Anlegen & verschicken"
+          loading={onboard.isPending}
+          onConfirm={() => onboard.mutate()}
+          onClose={() => setConfirmOnboard(false)}
+        >
+          Der Bot legt ein Konto mit einem Benutzernamen aus dem Anzeigenamen und einem zufälligen Passwort an, verknüpft es (auch mit Jellyseerr, falls eingerichtet) und schickt die Zugangsdaten mit einer kurzen Anleitung per WhatsApp. Das Passwort wird nirgends gespeichert.
+        </ConfirmDialog>
       </Card>
       <Card title="Details">
         <KeyValue
@@ -428,6 +455,15 @@ function ProfileTab({ d }: { d: UserDetail }) {
             ['Anfragen heute', d.stats.requestsToday],
           ]}
         />
+        <label className="mt-4 flex items-center gap-2 border-t border-line pt-3 text-[13px]" title="Einmal pro Woche „Neu auf dem Server“ per WhatsApp">
+          <Toggle
+            checked={!!u.digest}
+            disabled={patch.isPending}
+            onChange={(v) => patch.mutate({ digest: v }, { onSuccess: () => toast(v ? 'Wochenrückblick an' : 'Wochenrückblick abbestellt') })}
+            label="Wochenrückblick bekommen"
+          />
+          Wochenrückblick
+        </label>
       </Card>
     </div>
   );

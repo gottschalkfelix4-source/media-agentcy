@@ -22,6 +22,7 @@ const shots: { name: string; path: string; width: number; height: number; scale?
   { name: 'users', path: '/users', width: 1440, height: 760 },
   { name: 'user-chat', path: '/users/3', width: 1440, height: 860 },
   { name: 'user-memory', path: '/users/2?tab=memory', width: 1440, height: 640 },
+  { name: 'user-import', path: '/users/import', width: 1440, height: 900 },
   { name: 'ticket', path: '/tickets?id=1', width: 1440, height: 900 },
   { name: 'settings', path: '/settings?group=llm', width: 1440, height: 980 },
   { name: 'dashboard-light', path: '/', width: 1440, height: 900, theme: 'light' },

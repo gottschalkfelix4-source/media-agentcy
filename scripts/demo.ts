@@ -157,6 +157,45 @@ for (let day = 13; day >= 0; day--) {
   }
 }
 
+// ---------- media servers (accounts for the user import) ----------
+const none = async () => [];
+const ok = async () => ({ ok: true, version: 'demo' });
+app.ctx.services.jellyfin = {
+  ping: ok,
+  sessions: none,
+  activity: none,
+  users: async () =>
+    [
+      ['felix', true],
+      ['anna'],
+      ['clara'],
+      ['max'],
+      ['lisa'],
+      ['tom'],
+      ['oma-gerda', false, true],
+    ].map(([name, admin = false, disabled = false], i) => ({ id: `jf-${i}`, name: name as string, admin: !!admin, disabled: !!disabled, lastActivity: undefined })),
+} as never;
+app.ctx.services.plex = {
+  ping: ok,
+  sessions: none,
+  users: async () => [
+    { id: 1, username: 'felix_g', owner: true },
+    { id: 2, username: 'benflix', email: 'ben@example.com', owner: false },
+    { id: 3, username: 'max_m', email: 'max@example.com', owner: false },
+    { id: 4, username: 'jonas.w', email: 'jonas@example.com', owner: false },
+  ],
+} as never;
+app.ctx.services.seerr = {
+  ping: ok,
+  users: async () => [
+    { id: 1, displayName: 'Felix', jellyfinUsername: 'felix', plexUsername: 'felix_g' },
+    { id: 3, displayName: 'Anna', jellyfinUsername: 'anna' },
+    { id: 5, displayName: 'Max Mustermann', jellyfinUsername: 'max', plexUsername: 'max_m', email: 'max@example.com' },
+    { id: 6, displayName: 'Lisa', jellyfinUsername: 'lisa', email: 'lisa@example.com' },
+    { id: 7, displayName: 'Jonas', plexUsername: 'jonas.w', email: 'jonas@example.com' },
+  ],
+} as never;
+
 // Fake WhatsApp connection so the status pages have something to show.
 const whatsapp = {
   state: 'open',

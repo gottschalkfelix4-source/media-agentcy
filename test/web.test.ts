@@ -140,6 +140,44 @@ test('users: create, direct message, takeover keeps the bot quiet', async () => 
   assert.ok(detail.json.runtime.lastReplyAt);
 });
 
+test('user import: candidates from the media servers, create and link with phone numbers', async () => {
+  app.ctx.services.jellyfin = { users: async () => [{ id: 'jf-1', name: 'lena', admin: false, disabled: false }, { id: 'jf-2', name: 'ole', admin: false, disabled: false }] } as never;
+  app.ctx.services.seerr = { users: async () => [{ id: 4, displayName: 'Lena K.', jellyfinUsername: 'lena' }] } as never;
+  try {
+    const cand = await req('GET', '/user-import/candidates');
+    assert.equal(cand.status, 200);
+    const lena = cand.json.candidates.find((c: any) => c.jellyfin?.name === 'lena');
+    assert.equal(lena.name, 'Lena K.');
+    assert.equal(lena.seerr.id, 4);
+
+    const res = await req('POST', '/user-import', {
+      users: [
+        { phone: '+49 151 0000 0010', display_name: 'Lena K.', jellyfin_user_id: 'jf-1', jellyfin_username: 'lena', seerr_user_id: 4 },
+        { phone: '0151 0000 0011', jellyfin_username: 'ole' },
+        { phone: '4915100000012', jellyfin_username: 'lena' },
+      ],
+    });
+    assert.equal(res.status, 200);
+    const [ok, local, dup] = res.json.results;
+    assert.equal(ok.action, 'created');
+    assert.match(local.error, /Ländervorwahl/);
+    assert.match(dup.error, /schon mit .* verknüpft/);
+
+    const u = app.repo.getUser(ok.userId)!;
+    assert.equal(u.wa_id, '4915100000010');
+    assert.equal(u.status, 'active');
+    assert.equal(u.jellyfin_user_id, 'jf-1');
+    assert.equal(u.seerr_user_id, 4);
+    assert.equal(sent.filter((s) => s.to === '4915100000010').length, 0, 'no welcome unless asked for');
+
+    const again = await req('GET', '/user-import/candidates');
+    assert.equal(again.json.candidates.find((c: any) => c.jellyfin?.name === 'lena').existing.id, u.id);
+  } finally {
+    app.ctx.services.jellyfin = undefined;
+    app.ctx.services.seerr = undefined;
+  }
+});
+
 test('admin numbers cannot be deleted, other users can', async () => {
   const admin = app.repo.getUserByWaId(ADMIN)!;
   assert.equal((await req('DELETE', `/users/${admin.id}`)).status, 400);

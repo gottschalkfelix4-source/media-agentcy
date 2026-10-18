@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { LifeBuoy, Plus, Search, Shield, Users as UsersIcon } from 'lucide-react';
+import { Import, LifeBuoy, Plus, Search, Shield, Users as UsersIcon } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { api, queryClient, type User, type UserListItem } from '../api';
 import {
@@ -115,9 +115,14 @@ export function UsersPage() {
         title="Nutzer"
         subtitle="Jeder Nutzer hat seinen eigenen Bot-Verlauf und eigenes Gedächtnis"
         actions={
-          <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setAdding(true)}>
-            Nutzer hinzufügen
-          </Button>
+          <>
+            <Button icon={<Import className="size-4" />} onClick={() => navigate('/users/import')}>
+              Aus Medienserver importieren
+            </Button>
+            <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setAdding(true)}>
+              Nutzer hinzufügen
+            </Button>
+          </>
         }
       />
       <div className="mb-4 flex flex-wrap items-center gap-3">

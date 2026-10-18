@@ -13,6 +13,7 @@ import { RequestsPage } from './pages/Requests';
 import { SettingsPage } from './pages/Settings';
 import { TicketsPage } from './pages/Tickets';
 import { UserDetailPage } from './pages/UserDetail';
+import { UserImportPage } from './pages/UserImport';
 import { UsersPage } from './pages/Users';
 import { WhatsAppPage } from './pages/WhatsApp';
 import { match, useLocation } from './router';
@@ -28,6 +29,7 @@ function Routes() {
   let m: Record<string, string> | null;
   if (path === '/' || path === '') return <Dashboard />;
   if (path === '/users') return <UsersPage />;
+  if (path === '/users/import') return <UserImportPage />;
   if ((m = match('/users/:id', path))) return <UserDetailPage id={Number(m.id)} />;
   if (path === '/tickets') return <TicketsPage />;
   if (path === '/requests') return <RequestsPage />;

@@ -22,9 +22,13 @@ interface PlexMetadata {
 
 export class PlexClient {
   readonly api: ApiClient;
+  /** plex.tv account API – the local server does not know who it is shared with. */
+  readonly tv: ApiClient;
 
-  constructor(baseUrl: string, token: string) {
-    this.api = new ApiClient({ service: 'Plex', baseUrl, headers: { 'X-Plex-Token': token, 'X-Plex-Client-Identifier': 'media-agentcy' } });
+  constructor(baseUrl: string, token: string, tvUrl = 'https://plex.tv/api/v2') {
+    const headers = { 'X-Plex-Token': token, 'X-Plex-Client-Identifier': 'media-agentcy', 'X-Plex-Product': 'Media Agentcy' };
+    this.api = new ApiClient({ service: 'Plex', baseUrl, headers });
+    this.tv = new ApiClient({ service: 'plex.tv', baseUrl: tvUrl, headers });
   }
 
   async ping() {
@@ -61,6 +65,15 @@ export class PlexClient {
   async scanLibrary(sectionKey?: string) {
     const keys = sectionKey ? [sectionKey] : (await this.sections()).map((s) => s.key);
     for (const k of keys) await this.api.get(`/library/sections/${k}/refresh`);
+  }
+
+  /** Owner plus friends and managed users of the token's plex.tv account. `username` is what sessions report as User.title. */
+  async users() {
+    type TvUser = { id: number; title?: string; username?: string; email?: string };
+    const [owner, friends] = await Promise.all([this.tv.get<TvUser>('/user'), this.tv.get<TvUser[]>('/friends')]);
+    return [{ ...owner, owner: true }, ...friends.map((f) => ({ ...f, owner: false }))]
+      .filter((u) => u.title || u.username)
+      .map((u) => ({ id: u.id, username: (u.title || u.username)!, email: u.email || undefined, owner: u.owner }));
   }
 
   async sessions(username?: string) {

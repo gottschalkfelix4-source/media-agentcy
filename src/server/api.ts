@@ -14,6 +14,7 @@ import { recentLogs } from '../logger.js';
 import { GROUPS } from '../settings/registry.js';
 import type { WhatsAppClient } from '../whatsapp/client.js';
 import { SESSION_COOKIE, type WebAuth } from './auth.js';
+import { mergeAccounts, normalizePhone, type MediaAccountLists } from './userImport.js';
 
 export interface ApiDeps {
   app: App;
@@ -34,6 +35,9 @@ class HttpError extends Error {
 
 const TICKET_STATUSES = ['open', 'auto_fixing', 'escalated', 'resolved', 'closed'] as const;
 const ACTIVE_TICKETS: TicketStatus[] = ['open', 'auto_fixing', 'escalated'];
+
+const importWelcomeEvent = (adminName: string, displayName?: string | null) =>
+  `${adminName} hat dich gerade für diesen Nutzer${displayName ? ` (Name: ${displayName})` : ''} eingerichtet. Der Nutzer hat dir noch nie geschrieben und kennt dich noch nicht. Schreib ihm eine kurze erste Nachricht: wer du bist, dass ${adminName} dich eingerichtet hat, und in 2-3 Sätzen, wobei du helfen kannst (Filme/Serien anfragen, Probleme melden, Benachrichtigung wenn Anfragen fertig sind).`;
 
 const welcomeEvent = (displayName?: string | null) =>
   `Der Admin hat dich gerade freigeschaltet. Begrüße den Nutzer kurz${displayName ? ` (Name: ${displayName})` : ''}, stell dich vor und erkläre in 2-3 Sätzen, wobei du helfen kannst (Filme/Serien anfragen, Probleme melden, Benachrichtigung wenn Anfragen fertig sind). Beantworte ggf. auch seine erste Nachricht aus dem Verlauf.`;
@@ -289,14 +293,16 @@ export function createApi(deps: ApiDeps) {
     const b = await body(
       c,
       z.object({
-        phone: z.string().transform((v) => v.replace(/\D/g, '')).pipe(z.string().min(7, 'Telefonnummer mit Ländervorwahl angeben')),
+        phone: z.string(),
         display_name: z.string().trim().min(1).optional(),
         status: z.enum(['active', 'pending', 'blocked']).default('active'),
       }),
     );
-    if (repo.getUserByWaId(b.phone)) throw new HttpError(409, 'Diese Nummer gibt es schon');
-    const u = repo.createUser(b.phone, { display_name: b.display_name ?? null, status: b.status });
-    repo.logAction(u.id, null, 'web_user_created', { phone: b.phone });
+    const p = normalizePhone(b.phone);
+    if ('error' in p) throw new HttpError(400, p.error);
+    if (repo.getUserByWaId(p.phone)) throw new HttpError(409, 'Diese Nummer gibt es schon');
+    const u = repo.createUser(p.phone, { display_name: b.display_name ?? null, status: b.status });
+    repo.logAction(u.id, null, 'web_user_created', { phone: p.phone });
     return c.json(u);
   });
 
@@ -447,6 +453,105 @@ export function createApi(deps: ApiDeps) {
       }
     }
     return c.json(out);
+  });
+
+  // ---------------------------------------------------------------- user import
+
+  api.get('/user-import/candidates', async (c) => {
+    const { jellyfin, plex, seerr } = ctx.services;
+    const lists: MediaAccountLists = {};
+    const errors: string[] = [];
+    await Promise.all([
+      jellyfin && jellyfin.users().then((l) => (lists.jellyfin = l), (err) => errors.push(`Jellyfin: ${errText(err)}`)),
+      plex && plex.users().then((l) => (lists.plex = l), (err) => errors.push(`Plex: ${errText(err)}`)),
+      seerr && seerr.users().then((l) => (lists.seerr = l), (err) => errors.push(`Jellyseerr: ${errText(err)}`)),
+    ]);
+    return c.json({
+      sources: { jellyfin: !!jellyfin, plex: !!plex, seerr: !!seerr },
+      candidates: mergeAccounts(lists, repo.listUsers()),
+      errors,
+    });
+  });
+
+  api.post('/user-import', async (c) => {
+    const b = await body(
+      c,
+      z.object({
+        users: z
+          .array(
+            z.object({
+              phone: z.string(),
+              display_name: z.string().trim().max(80).nullish(),
+              jellyfin_user_id: z.string().trim().nullish(),
+              jellyfin_username: z.string().trim().nullish(),
+              plex_username: z.string().trim().nullish(),
+              seerr_user_id: z.number().int().nullish(),
+            }),
+          )
+          .min(1)
+          .max(500),
+        status: z.enum(['active', 'pending']).default('active'),
+        welcome: z.boolean().default(false),
+      }),
+    );
+    const seen = new Set<string>();
+    const results: { phone: string; ok: boolean; action?: 'created' | 'updated'; userId?: number; error?: string }[] = [];
+    for (const row of b.users) {
+      const p = normalizePhone(row.phone);
+      if ('error' in p) {
+        results.push({ phone: row.phone, ok: false, error: p.error });
+        continue;
+      }
+      if (seen.has(p.phone)) {
+        results.push({ phone: row.phone, ok: false, error: 'Nummer kommt doppelt vor' });
+        continue;
+      }
+      seen.add(p.phone);
+
+      const links: UserPatch = {};
+      if (row.jellyfin_username) Object.assign(links, { jellyfin_username: row.jellyfin_username, jellyfin_user_id: row.jellyfin_user_id ?? null });
+      if (row.plex_username) links.plex_username = row.plex_username;
+      if (row.seerr_user_id != null) links.seerr_user_id = row.seerr_user_id;
+
+      const existing = repo.getUserByWaId(p.phone);
+      // An account may belong to only one bot user.
+      const taken = repo
+        .listUsers()
+        .find(
+          (u) =>
+            u.id !== existing?.id &&
+            ((links.jellyfin_username && u.jellyfin_username?.toLowerCase() === links.jellyfin_username.toLowerCase()) ||
+              (links.plex_username && u.plex_username?.toLowerCase() === links.plex_username.toLowerCase()) ||
+              (links.seerr_user_id != null && u.seerr_user_id === links.seerr_user_id)),
+        );
+      if (taken) {
+        results.push({ phone: row.phone, ok: false, error: `Konto ist schon mit ${userLabel(taken)} verknüpft` });
+        continue;
+      }
+
+      let userId: number;
+      let activated = false;
+      if (existing) {
+        const patch: UserPatch = { ...links };
+        if (!existing.display_name && row.display_name) patch.display_name = row.display_name;
+        if (existing.status === 'pending' && b.status === 'active') {
+          patch.status = 'active';
+          activated = true;
+        }
+        repo.updateUser(existing.id, patch);
+        userId = existing.id;
+      } else {
+        userId = repo.createUser(p.phone, { ...links, display_name: row.display_name || null, status: b.status }).id;
+        activated = b.status === 'active';
+      }
+      repo.logAction(userId, null, 'web_user_imported', { phone: p.phone, accounts: Object.keys(links), updated: !!existing });
+      if (b.welcome && activated) {
+        const u = repo.getUser(userId)!;
+        ctx.dispatchEvent(userId, existing ? welcomeEvent(u.display_name) : importWelcomeEvent(ctx.config.ADMIN_NAME, u.display_name));
+      }
+      results.push({ phone: row.phone, ok: true, action: existing ? 'updated' : 'created', userId });
+    }
+    return c.json({ results });
   });
 
   // ---------------------------------------------------------------- tickets

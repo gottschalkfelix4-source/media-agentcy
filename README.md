@@ -27,6 +27,7 @@
 | 🛠️ **Problemmeldungen** | Ticket → Diagnose über Radarr/Sonarr/Jellyfin/Plex → kleine Fehler selbst beheben (Datei ersetzen, fehlende Folgen suchen, Rescan, Metadaten) → Nutzer informieren, wenn die neue Datei da ist |
 | 🚨 **Eskalation** | Größere Probleme gehen per WhatsApp an dich. Du sprichst im selben Chat mit dem Agenten, er richtet den Nutzern deine Antworten aus |
 | 🧠 **Gedächtnis pro Nutzer** | Fakten (Geräte, Vorlieben …), laufende Zusammenfassung früherer Gespräche, Ticket- und Anfrageverlauf |
+| 👥 **Nutzer-Import** | Konten aus Jellyfin, Plex und Jellyseerr auf einen Blick, zusammengeführt pro Person. WhatsApp-Nummer eintragen, importieren, fertig verknüpft |
 | 🖥️ **Web-Oberfläche** | Nutzer freischalten, Chats mitlesen und übernehmen, Tickets, Token-Verbrauch, alle Einstellungen live, am Handy und am Desktop |
 | 🔌 **KI frei wählbar** | OpenRouter, OpenAI, ChatGPT-Login (experimentell) oder jeder OpenAI-kompatible Endpoint (Ollama, LM Studio, LiteLLM …) |
 
@@ -35,15 +36,18 @@
 <table>
   <tr>
     <td width="50%"><img src="docs/screenshots/users.png" alt="Nutzerliste"><br><sub><b>Nutzer:</b> Status, verknüpfte Konten, Live-Status jedes Bots</sub></td>
-    <td width="50%"><img src="docs/screenshots/user-chat.png" alt="Chatverlauf eines Nutzers"><br><sub><b>Chat:</b> Verlauf wie in WhatsApp, Bot pausieren und selbst schreiben</sub></td>
+    <td width="50%"><img src="docs/screenshots/user-import.png" alt="Nutzer aus den Medienservern importieren"><br><sub><b>Import:</b> Konten aus Jellyfin, Plex und Jellyseerr übernehmen, Handynummer dazu</sub></td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/ticket.png" alt="Ticket-Detail"><br><sub><b>Tickets:</b> Diagnose, was der Bot schon versucht hat, Lösung setzen</sub></td>
+    <td><img src="docs/screenshots/user-chat.png" alt="Chatverlauf eines Nutzers"><br><sub><b>Chat:</b> Verlauf wie in WhatsApp, Bot pausieren und selbst schreiben</sub></td>
     <td><img src="docs/screenshots/user-memory.png" alt="Gedächtnis eines Nutzers"><br><sub><b>Gedächtnis:</b> Zusammenfassung und Fakten pro Nutzer, bearbeitbar</sub></td>
   </tr>
   <tr>
+    <td><img src="docs/screenshots/ticket.png" alt="Ticket-Detail"><br><sub><b>Tickets:</b> Diagnose, was der Bot schon versucht hat, Lösung setzen</sub></td>
     <td><img src="docs/screenshots/settings.png" alt="Einstellungen"><br><sub><b>Einstellungen:</b> alles ohne Neustart, mit Verbindungstest und Modell-Liste</sub></td>
-    <td><img src="docs/screenshots/dashboard-light.png" alt="Übersicht im hellen Design"><br><sub><b>Hell oder dunkel:</b> folgt dem System, umschaltbar</sub></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><img src="docs/screenshots/dashboard-light.png" alt="Übersicht im hellen Design" width="50%"><br><sub><b>Hell oder dunkel:</b> folgt dem System, umschaltbar</sub></td>
   </tr>
 </table>
 
@@ -112,6 +116,8 @@ Als URLs funktionieren die internen Adressen, z. B. `http://192.168.1.10:8096` f
 2. Schreibt eine neue Nummer, bekommst du „🆕 Neue Nummer …“ per WhatsApp, und sie erscheint in der Oberfläche unter **Nutzer**.
 3. Freischalten per Klick oder im Admin-Chat, z. B. *„Schalte #2 frei, das ist Max, Jellyfin-User max“*. Der Agent schaltet frei, verknüpft Jellyfin- und Jellyseerr-Konto und begrüßt Max.
 
+**Oder alle auf einmal importieren:** **Nutzer** → **Aus Medienserver importieren**. Die Seite listet alle Konten aus Jellyfin, Plex und Jellyseerr. Konten derselben Person werden zusammengeführt (über Jellyseerr, Benutzername oder E-Mail). Du trägst nur noch die WhatsApp-Nummern ein (mit Ländervorwahl, z. B. `+49 151 …`) und klickst **Importieren**. Optional schreibt der Bot jedem eine kurze Begrüßung. Ist eine Nummer schon angelegt, werden nur die Konten verknüpft. Plex-Nutzer kommen von plex.tv (dein Konto und die Freunde, mit denen du den Server teilst).
+
 Verknüpfte Konten lohnen sich: Anfragen laufen dann im Namen des Nutzers, Anfragen von der Jellyseerr-Webseite werden auch gemeldet, und die Wiedergabe-Diagnose sieht die Sessions des Nutzers.
 
 ### Updates
@@ -178,6 +184,7 @@ docker compose up -d --build
 
 - **Übersicht**: WhatsApp-Status, aktive Bots, wartende Nutzer, eskalierte Tickets, Nachrichten- und Token-Verbrauch, Zustand der Dienste, was gerade läuft
 - **Nutzer**: alle Nummern mit Status (wartet / aktiv / gesperrt) und Live-Status des jeweiligen Bots (antwortet, sammelt Nachrichten, pausiert, Fehler). Freischalten, sperren, löschen, anlegen
+- **Nutzer importieren**: Konten aus Jellyfin, Plex und Jellyseerr übernehmen, pro Person zusammengeführt, WhatsApp-Nummer eintragen. Bestehende Nutzer werden erkannt und nur verknüpft
 - **Nutzer-Detail**: Chatverlauf wie in WhatsApp, Gedächtnis (Zusammenfassung und Fakten bearbeiten), verknüpfte Konten, Tickets, Anfragen, Token-Verbrauch, laufende Wiedergabe
 - **Übernehmen**: Den Bot eines Nutzers pausieren und selbst schreiben (geht wörtlich vom Bot-Konto raus), oder den Bot deine Nachricht formulieren lassen. Eingehende Nachrichten werden weiter gespeichert, aber nicht beantwortet
 - **Tickets & Anfragen**: Status, Dringlichkeit, Lösung setzen und den Nutzer optional per WhatsApp informieren

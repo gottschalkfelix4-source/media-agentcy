@@ -265,12 +265,13 @@ npm run screenshots
 
 ```bash
 docker login registry.felix-cloud.net
-docker build --provenance=false --build-arg VERSION=0.1.0 -t registry.felix-cloud.net/root/media-agentcy:latest -t registry.felix-cloud.net/root/media-agentcy:0.1.0 .
-docker push registry.felix-cloud.net/root/media-agentcy:0.1.0
-docker push registry.felix-cloud.net/root/media-agentcy:latest
+docker buildx build --provenance=false --sbom=false --build-arg VERSION=0.1.0 --output type=registry,oci-mediatypes=false -t registry.felix-cloud.net/root/media-agentcy:latest -t registry.felix-cloud.net/root/media-agentcy:0.1.0 .
 ```
 
-`--provenance=false` ist nötig, weil die GitLab-Registry die Attestation-Manifeste von Docker Desktop sonst mit „blob unknown“ ablehnt.
+Der Befehl baut und pusht in einem Schritt. Die Optionen sind nötig:
+
+- `--provenance=false --sbom=false`: Sonst lehnt die GitLab-Registry die Attestation-Manifeste von Docker Desktop mit „blob unknown“ ab.
+- `oci-mediatypes=false`: Pusht ein klassisches Docker-Manifest statt OCI. Der Update-Check von Unraid fragt nur nach Docker-Manifesten und zeigt bei OCI-Images „not available“.
 
 ### Struktur
 

@@ -1,0 +1,14 @@
+services:
+  media-agentcy:
+    build: .
+    image: media-agentcy:latest
+    container_name: media-agentcy
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+    volumes:
+      # Unraid: z.B. /mnt/user/appdata/media-agentcy
+      - ./data:/data
+    ports:
+      - "8085:8080"

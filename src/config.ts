@@ -78,6 +78,9 @@ const schema = z.object({
 
   HTTP_PORT: int(8080),
   HTTP_TOKEN: optStr,
+  WEB_PASSWORD: optStr,
+
+  PROMPT_EXTRA: optStr,
 
   DEBOUNCE_MS: int(2500),
   HISTORY_LIMIT: int(20),
@@ -85,43 +88,65 @@ const schema = z.object({
   MAX_TOOL_ROUNDS: int(8),
 });
 
-const parsed = schema.safeParse(process.env);
-if (!parsed.success) {
-  console.error('Ungültige Konfiguration:\n' + z.prettifyError(parsed.error));
-  process.exit(1);
-}
+export const configSchema = schema;
+export type EnvKey = keyof z.input<typeof schema>;
+type Env = z.output<typeof schema>;
 
-const env = parsed.data;
-
-const defaultBaseUrl: Record<typeof env.LLM_PROVIDER, string | undefined> = {
+const defaultBaseUrl: Record<Env['LLM_PROVIDER'], string | undefined> = {
   openrouter: 'https://openrouter.ai/api/v1',
   openai: 'https://api.openai.com/v1',
   chatgpt: 'https://chatgpt.com/backend-api/codex',
   custom: undefined,
 };
 
-const dataDir = path.resolve(env.DATA_DIR);
+function derive(env: Env) {
+  const dataDir = path.resolve(env.DATA_DIR);
+  return {
+    ...env,
+    dataDir,
+    dbFile: path.join(dataDir, 'media-agentcy.db'),
+    waAuthDir: path.join(dataDir, 'whatsapp-auth'),
+    llm: {
+      provider: env.LLM_PROVIDER,
+      baseUrl: env.LLM_BASE_URL ?? defaultBaseUrl[env.LLM_PROVIDER],
+      apiKey: env.LLM_API_KEY,
+      model: env.LLM_MODEL,
+      adminModel: env.LLM_MODEL_ADMIN ?? env.LLM_MODEL,
+      temperature: env.LLM_TEMPERATURE,
+      vision: env.LLM_VISION,
+      chatgptAuthFile: env.CHATGPT_AUTH_FILE ?? path.join(dataDir, 'codex-auth.json'),
+    },
+  };
+}
 
-export const config = {
-  ...env,
-  dataDir,
-  dbFile: path.join(dataDir, 'media-agentcy.db'),
-  waAuthDir: path.join(dataDir, 'whatsapp-auth'),
-  llm: {
-    provider: env.LLM_PROVIDER,
-    baseUrl: env.LLM_BASE_URL ?? defaultBaseUrl[env.LLM_PROVIDER],
-    apiKey: env.LLM_API_KEY,
-    model: env.LLM_MODEL,
-    adminModel: env.LLM_MODEL_ADMIN ?? env.LLM_MODEL,
-    temperature: env.LLM_TEMPERATURE,
-    vision: env.LLM_VISION,
-    chatgptAuthFile: env.CHATGPT_AUTH_FILE ?? path.join(dataDir, 'codex-auth.json'),
-  },
-};
+export type Config = ReturnType<typeof derive>;
 
-export type Config = typeof config;
+/** Builds a config from raw string values (env vars, optionally overlaid with settings from the web UI). */
+export function buildConfig(source: Record<string, string | undefined>): { ok: true; config: Config } | { ok: false; error: string } {
+  const parsed = schema.safeParse(source);
+  if (!parsed.success) return { ok: false, error: z.prettifyError(parsed.error) };
+  const c = derive(parsed.data);
+  if (c.llm.provider === 'custom' && !c.llm.baseUrl) {
+    return { ok: false, error: 'LLM_PROVIDER=custom braucht LLM_BASE_URL (OpenAI-kompatibler Endpoint, z.B. http://ollama:11434/v1)' };
+  }
+  for (const k of ['DEBOUNCE_MS', 'HISTORY_LIMIT', 'SUMMARIZE_AFTER', 'MAX_TOOL_ROUNDS', 'REQUESTS_PER_DAY', 'NOTIFY_POLL_MINUTES', 'AUTOFIX_MAX_REPLACEMENTS_PER_DAY'] as const) {
+    if (!Number.isFinite(c[k]) || c[k] < 0) return { ok: false, error: `${k} muss eine Zahl ≥ 0 sein` };
+  }
+  return { ok: true, config: c };
+}
 
-if (config.llm.provider === 'custom' && !config.llm.baseUrl) {
-  console.error('LLM_PROVIDER=custom braucht LLM_BASE_URL (OpenAI-kompatibler Endpoint, z.B. http://ollama:11434/v1)');
+const initial = buildConfig(process.env);
+if (!initial.ok) {
+  console.error('Ungültige Konfiguration:\n' + initial.error);
   process.exit(1);
+}
+
+/**
+ * The live config. It is mutated in place when settings change in the web UI,
+ * so always read values at use time (config.X) instead of copying them.
+ */
+export const config: Config = initial.config;
+
+export function replaceConfig(next: Config) {
+  Object.assign(config, next);
 }

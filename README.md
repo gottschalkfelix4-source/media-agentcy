@@ -67,6 +67,24 @@ Verknüpfte Konten sind wichtig: Anfragen laufen dann im Namen des Nutzers (`X-A
 ### Optional: Jellyseerr-Webhook
 Jellyseerr → Einstellungen → Benachrichtigungen → Webhook → URL `http://<bot>:8085/webhook/seerr?token=…`, Ereignis "Medien verfügbar". Dann kommt die Benachrichtigung sofort statt erst beim nächsten Poll.
 
+## Web-Oberfläche
+
+Unter `http://<unraid-ip>:8085` läuft eine Admin-Oberfläche (Desktop und Handy, Hell/Dunkel):
+
+- **Übersicht**: WhatsApp-Status, aktive Bots, wartende Nutzer, eskalierte Tickets, Nachrichten- und Token-Verbrauch, Zustand der Dienste, was gerade läuft
+- **Nutzer**: alle Nummern mit Status (wartet / aktiv / gesperrt) und Live-Status des jeweiligen Bots (antwortet, sammelt Nachrichten, pausiert, Fehler). Freischalten, sperren, löschen, Nutzer anlegen.
+- **Nutzer-Detail**: kompletter Chatverlauf wie in WhatsApp, Gedächtnis (Zusammenfassung + Fakten bearbeiten), verknüpfte Konten, Tickets, Anfragen, Token-Verbrauch, laufende Wiedergabe
+- **Übernehmen**: Der Bot eines Nutzers lässt sich pausieren. Du schreibst dann selbst (geht wörtlich vom Bot-Konto raus), oder du lässt den Bot deine Nachricht formulieren. Eingehende Nachrichten werden weiter gespeichert, aber nicht beantwortet.
+- **Tickets & Anfragen**: Status, Dringlichkeit, Lösung setzen und den Nutzer optional per WhatsApp informieren
+- **Admin-Agent**: derselbe Admin-Chat wie per WhatsApp, plus Rundnachricht an alle
+- **WhatsApp**: QR-Code scannen, neu verbinden, abmelden
+- **Aktivität & Logs**: Aktionsprotokoll des Bots und Live-Logs
+- **Einstellungen**: alle Optionen aus `.env` (KI-Anbieter mit Verbindungstest und Modell-Liste, Dienste, Limits, Persönlichkeit …)
+
+**Einstellungen** gelten sofort ohne Neustart (außer Port und Datenordner). Ein in der Oberfläche gesetzter Wert hat Vorrang vor `.env`. „Zurücksetzen“ an einem Feld nimmt wieder den `.env`- bzw. Standardwert. API-Keys werden nie zurückgegeben, nur die letzten vier Zeichen.
+
+**Login**: Beim ersten Start erzeugt der Bot ein zufälliges Passwort und schreibt es ins Container-Log (`docker logs media-agentcy`). Ändern lässt es sich unter Einstellungen → System. Alternativ `WEB_PASSWORD` in `.env` setzen; dann gilt dieses Passwort fest. Die Oberfläche ist für dein Heimnetz gedacht. Von außen nur über VPN oder einen Reverse Proxy mit HTTPS erreichbar machen.
+
 ## Beispiele im Admin-Chat
 - "Was ist mit Ticket 4?" / "Welche Tickets sind offen?"
 - "Sag Max, dass ich das am Wochenende fixe"
@@ -87,9 +105,16 @@ Befehle (ohne KI): `/hilfe`, `/reset` (Verlauf leeren), `/status` (Admin: Dienst
 ## Entwicklung
 ```bash
 npm run dev        # Bot mit Auto-Reload
-npm test           # End-to-End-Test mit gescriptetem LLM und Fake-Media-Stack
-npm run typecheck
+npm test           # End-to-End- und Web-API-Tests mit gescriptetem LLM und Fake-Media-Stack
+npm run typecheck  # Server + Web-Oberfläche
+npm run build      # Server nach dist/, Web-Oberfläche nach dist/web
 ```
+
+Web-Oberfläche ohne WhatsApp und ohne echte Dienste ausprobieren (Beispieldaten, temporäre Datenbank, Passwort `demo`):
+```bash
+npm run build:web && npm run demo     # http://localhost:8090
+```
+Für Arbeit am Frontend mit Hot-Reload zusätzlich `API_URL=http://localhost:8090 npm run dev:web` (http://localhost:5173). Ohne `API_URL` spricht der Dev-Server mit einem normal laufenden Bot auf Port 8080.
 
 Struktur:
 ```
@@ -101,6 +126,9 @@ src/
   messaging/    Router: Onboarding, Zugriff, Debounce, Warteschlangen
   notifier/     Poller: fertige Anfragen, Auto-Fix-Follow-up
   whatsapp/     Baileys-Client (QR-Login, LID→Telefonnummer, Bilder)
-  server/       /health, /qr, /webhook/seerr
+  server/       Web-API (Login, Nutzer, Tickets, Einstellungen, Live-Events), /health, /qr, /webhook/seerr
+  settings/     Einstellungs-Registry + Speicher (Web-Werte überlagern .env, live übernommen)
   cli/          lokaler Test-Chat
+web/            Admin-Oberfläche (React, Vite, Tailwind)
+scripts/demo.ts Demo-Server mit Beispieldaten
 ```

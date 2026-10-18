@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { createApp } from './app.js';
 import { config } from './config.js';
 import { enabledServices, pingAll } from './integrations/index.js';
@@ -5,21 +6,25 @@ import { logger } from './logger.js';
 import { startHttpServer } from './server/http.js';
 import { WhatsAppClient } from './whatsapp/client.js';
 
+const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
+
 async function main() {
   const whatsapp = new WhatsAppClient(config, logger);
-  const { router, poller, services } = createApp(whatsapp);
+  const app = createApp(whatsapp);
+  const { router, poller, ctx } = app;
+  app.ensureAdminUsers();
 
   logger.info(
-    { llm: `${config.llm.provider}/${config.llm.model}`, services: enabledServices(services), admins: config.ADMIN_NUMBERS },
-    `${config.BOT_NAME} startet`,
+    { llm: `${config.llm.provider}/${config.llm.model}`, services: enabledServices(ctx.services), admins: config.ADMIN_NUMBERS },
+    `${config.BOT_NAME} ${pkg.version} startet`,
   );
-  if (!config.ADMIN_NUMBERS.length) logger.warn('ADMIN_NUMBERS ist leer – Eskalationen können niemanden erreichen!');
-  pingAll(services).then((r) => logger.info(r, 'Dienste-Check'));
+  if (!config.ADMIN_NUMBERS.length) logger.warn('Keine Admin-Nummer eingetragen – Eskalationen können niemanden erreichen! (Web-Oberfläche → Einstellungen)');
+  pingAll(ctx.services).then((r) => logger.info(r, 'Dienste-Check'));
 
+  const server = startHttpServer({ app, whatsapp, version: pkg.version });
   whatsapp.onMessage = (msg) => router.onIncoming(msg);
   await whatsapp.start();
   poller.start();
-  const server = startHttpServer({ config, logger, whatsapp, poller });
 
   const shutdown = async (signal: string) => {
     logger.info(`${signal} empfangen – fahre herunter`);

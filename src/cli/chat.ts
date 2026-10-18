@@ -21,14 +21,13 @@ const argVal = (name: string) => {
 };
 
 const ADMIN_FALLBACK = '490000000000';
-if (!config.ADMIN_NUMBERS.length) config.ADMIN_NUMBERS.push(ADMIN_FALLBACK);
-// Chatting locally should not need an approval round-trip.
-if (!args.includes('--strict')) (config as { UNKNOWN_USER_POLICY: string }).UNKNOWN_USER_POLICY = 'open';
-(config as { DEBOUNCE_MS: number }).DEBOUNCE_MS = 0;
+// Not persisted: chatting locally should not need an approval round-trip or debounce delay.
+const runtimeOverrides: Record<string, string> = { DEBOUNCE_MS: '0' };
+if (!args.includes('--strict')) runtimeOverrides.UNKNOWN_USER_POLICY = 'open';
 
 const c = { dim: '\x1b[2m', cyan: '\x1b[36m', yellow: '\x1b[33m', green: '\x1b[32m', reset: '\x1b[0m' };
 
-let currentWaId = args.includes('--admin') ? config.ADMIN_NUMBERS[0] : (argVal('--as') ?? '490000000001').replace(/\D/g, '');
+let currentWaId = '';
 const pushName = argVal('--name') ?? 'Testnutzer';
 let waiting: (() => void) | undefined;
 
@@ -45,7 +44,9 @@ const messenger: Messenger = {
   },
 };
 
-const { router, poller } = createApp(messenger);
+const { router, poller } = createApp(messenger, { runtimeOverrides });
+if (!config.ADMIN_NUMBERS.length) config.ADMIN_NUMBERS.push(ADMIN_FALLBACK);
+currentWaId = args.includes('--admin') ? config.ADMIN_NUMBERS[0] : (argVal('--as') ?? '490000000001').replace(/\D/g, '');
 const rl = createInterface({ input: stdin, output: stdout });
 
 console.log(`${c.green}Media Agentcy – lokaler Test-Chat${c.reset}`);

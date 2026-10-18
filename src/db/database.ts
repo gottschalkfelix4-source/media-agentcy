@@ -105,6 +105,36 @@ const MIGRATIONS: string[] = [
     value TEXT NOT NULL
   );
   `,
+  `
+  ALTER TABLE users ADD COLUMN bot_paused INTEGER NOT NULL DEFAULT 0;  -- admin took over the chat
+  ALTER TABLE messages ADD COLUMN via TEXT;                            -- NULL = bot/user, 'admin' = written by the admin
+  CREATE INDEX idx_messages_created ON messages(created_at);
+
+  CREATE TABLE settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE llm_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    kind TEXT NOT NULL,                    -- message | event | summary | console
+    model TEXT,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    duration_ms INTEGER,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX idx_usage_user ON llm_usage(user_id, created_at);
+
+  CREATE TABLE web_sessions (
+    token_hash TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at TEXT NOT NULL,
+    user_agent TEXT
+  );
+  `,
 ];
 
 export function openDatabase(file: string): DatabaseSync {

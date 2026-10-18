@@ -1,4 +1,5 @@
 import type { DatabaseSync, SQLInputValue } from 'node:sqlite';
+import { bus } from '../events.js';
 
 export type UserStatus = 'pending' | 'active' | 'blocked';
 export type UserRole = 'user' | 'admin';
@@ -20,6 +21,7 @@ export interface User {
   admin_notified_at: string | null;
   created_at: string;
   last_seen_at: string | null;
+  bot_paused: number;
 }
 
 export interface StoredMessage {
@@ -28,6 +30,7 @@ export interface StoredMessage {
   role: 'user' | 'assistant' | 'event';
   content: string;
   summarized: number;
+  via: string | null;
   created_at: string;
 }
 
@@ -81,6 +84,26 @@ export interface Watch {
   created_at: string;
 }
 
+export interface UserOverview extends User {
+  message_count: number;
+  last_message_at: string | null;
+  last_message: string | null;
+  last_message_role: string | null;
+  open_tickets: number;
+  request_count: number;
+  tokens_30d: number;
+}
+
+export interface ActionLogEntry {
+  id: number;
+  user_id: number | null;
+  ticket_id: number | null;
+  action: string;
+  details: string | null;
+  created_at: string;
+  user_name: string | null;
+}
+
 const USER_FIELDS = [
   'wa_jid',
   'display_name',
@@ -95,6 +118,7 @@ const USER_FIELDS = [
   'summary',
   'admin_notified_at',
   'last_seen_at',
+  'bot_paused',
 ] as const;
 
 export type UserPatch = Partial<Pick<User, (typeof USER_FIELDS)[number]>>;
@@ -128,6 +152,7 @@ export class Repo {
     const res = this.run('INSERT INTO users (wa_id) VALUES (?)', waId);
     const id = Number(res.lastInsertRowid);
     if (Object.keys(init).length) this.updateUser(id, init);
+    bus.emitEvent({ type: 'user', userId: id });
     return this.getUser(id)!;
   }
 
@@ -137,6 +162,8 @@ export class Repo {
     const sets = keys.map((k) => `${k} = ?`).join(', ');
     const values = keys.map((k) => (patch as Record<string, SQLInputValue>)[k] ?? null);
     this.run(`UPDATE users SET ${sets} WHERE id = ?`, ...values, id);
+    // last_seen_at alone changes on every message; the message event covers that.
+    if (keys.some((k) => k !== 'last_seen_at' && k !== 'wa_jid' && k !== 'push_name')) bus.emitEvent({ type: 'user', userId: id });
   }
 
   listUsers(status?: UserStatus) {
@@ -182,8 +209,9 @@ export class Repo {
 
   // ---------- messages / memory ----------
 
-  addMessage(userId: number, role: StoredMessage['role'], content: string) {
-    this.run('INSERT INTO messages (user_id, role, content) VALUES (?, ?, ?)', userId, role, content);
+  addMessage(userId: number, role: StoredMessage['role'], content: string, via?: 'admin') {
+    this.run('INSERT INTO messages (user_id, role, content, via) VALUES (?, ?, ?, ?)', userId, role, content, via ?? null);
+    bus.emitEvent({ type: 'message', userId });
   }
 
   recentMessages(userId: number, limit: number) {
@@ -192,6 +220,10 @@ export class Repo {
       userId,
       limit,
     );
+  }
+
+  countMessages(userId: number) {
+    return this.get<{ c: number }>('SELECT COUNT(*) AS c FROM messages WHERE user_id = ?', userId)!.c;
   }
 
   unsummarizedCount(userId: number) {
@@ -239,7 +271,9 @@ export class Repo {
       t.severity,
       t.media_ref ? JSON.stringify(t.media_ref) : null,
     );
-    return this.getTicket(Number(res.lastInsertRowid))!;
+    const id = Number(res.lastInsertRowid);
+    bus.emitEvent({ type: 'ticket', ticketId: id, userId: t.user_id });
+    return this.getTicket(id)!;
   }
 
   getTicket(id: number) {
@@ -253,6 +287,7 @@ export class Repo {
     const values = keys.map((k) => patch[k] ?? null);
     const resolved = patch.status === 'resolved' || patch.status === 'closed' ? ", resolved_at = datetime('now')" : '';
     this.run(`UPDATE tickets SET ${sets}, updated_at = datetime('now')${resolved} WHERE id = ?`, ...values, id);
+    bus.emitEvent({ type: 'ticket', ticketId: id });
   }
 
   appendTicketAction(id: number, action: string, result: string) {
@@ -261,6 +296,7 @@ export class Repo {
     const actions = JSON.parse(t.actions) as unknown[];
     actions.push({ at: new Date().toISOString(), action, result });
     this.run("UPDATE tickets SET actions = ?, updated_at = datetime('now') WHERE id = ?", JSON.stringify(actions), id);
+    bus.emitEvent({ type: 'ticket', ticketId: id, userId: t.user_id });
   }
 
   listTickets(opts: { userId?: number; statuses?: TicketStatus[]; limit?: number } = {}) {
@@ -290,6 +326,7 @@ export class Repo {
       r.media_type,
       r.title,
     );
+    bus.emitEvent({ type: 'request', userId: r.user_id });
   }
 
   pendingBotRequests() {
@@ -347,6 +384,7 @@ export class Repo {
       action,
       JSON.stringify(details),
     );
+    bus.emitEvent({ type: 'activity', userId });
   }
 
   countActionsSince(userId: number, action: string, sinceSql: string) {
@@ -364,5 +402,207 @@ export class Repo {
 
   setKv(key: string, value: string) {
     this.run('INSERT INTO kv (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', key, value);
+  }
+
+  // ---------- settings (web UI overrides of env vars) ----------
+
+  listSettings() {
+    return this.all<{ key: string; value: string; updated_at: string }>('SELECT * FROM settings ORDER BY key');
+  }
+
+  setSetting(key: string, value: string) {
+    this.run(
+      "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')",
+      key,
+      value,
+    );
+  }
+
+  deleteSetting(key: string) {
+    this.run('DELETE FROM settings WHERE key = ?', key);
+  }
+
+  // ---------- LLM usage ----------
+
+  addUsage(u: { userId: number | null; kind: string; model?: string; input?: number; output?: number; durationMs?: number }) {
+    this.run(
+      'INSERT INTO llm_usage (user_id, kind, model, input_tokens, output_tokens, duration_ms) VALUES (?, ?, ?, ?, ?, ?)',
+      u.userId,
+      u.kind,
+      u.model ?? null,
+      u.input ?? 0,
+      u.output ?? 0,
+      u.durationMs ?? null,
+    );
+  }
+
+  usageTotals(sinceSql: string, userId?: number) {
+    return this.get<{ calls: number; input: number; output: number; avg_ms: number | null }>(
+      `SELECT COUNT(*) AS calls, COALESCE(SUM(input_tokens), 0) AS input, COALESCE(SUM(output_tokens), 0) AS output, AVG(duration_ms) AS avg_ms
+       FROM llm_usage WHERE created_at >= datetime('now', ?) ${userId ? 'AND user_id = ?' : ''}`,
+      sinceSql,
+      ...(userId ? [userId] : []),
+    )!;
+  }
+
+  usageByDay(days: number, userId?: number) {
+    return this.all<{ day: string; input: number; output: number; calls: number }>(
+      `SELECT date(created_at) AS day, SUM(input_tokens) AS input, SUM(output_tokens) AS output, COUNT(*) AS calls
+       FROM llm_usage WHERE created_at >= datetime('now', ?) ${userId ? 'AND user_id = ?' : ''}
+       GROUP BY day ORDER BY day`,
+      `-${days} days`,
+      ...(userId ? [userId] : []),
+    );
+  }
+
+  usageByModel(sinceSql: string) {
+    return this.all<{ model: string; input: number; output: number; calls: number }>(
+      `SELECT COALESCE(model, '?') AS model, SUM(input_tokens) AS input, SUM(output_tokens) AS output, COUNT(*) AS calls
+       FROM llm_usage WHERE created_at >= datetime('now', ?) GROUP BY model ORDER BY SUM(input_tokens + output_tokens) DESC`,
+      sinceSql,
+    );
+  }
+
+  // ---------- web sessions ----------
+
+  addSession(tokenHash: string, expiresAt: string, userAgent?: string) {
+    this.run('INSERT INTO web_sessions (token_hash, expires_at, user_agent) VALUES (?, ?, ?)', tokenHash, expiresAt, userAgent ?? null);
+  }
+
+  getSession(tokenHash: string) {
+    return this.get<{ token_hash: string; expires_at: string }>(
+      "SELECT * FROM web_sessions WHERE token_hash = ? AND expires_at > datetime('now')",
+      tokenHash,
+    );
+  }
+
+  deleteSession(tokenHash: string) {
+    this.run('DELETE FROM web_sessions WHERE token_hash = ?', tokenHash);
+  }
+
+  deleteAllSessions() {
+    this.run('DELETE FROM web_sessions');
+  }
+
+  pruneSessions() {
+    this.run("DELETE FROM web_sessions WHERE expires_at <= datetime('now')");
+  }
+
+  // ---------- web UI queries ----------
+
+  /** All users with the numbers the user list needs. */
+  userOverview() {
+    return this.all<UserOverview>(`
+      SELECT u.*,
+        (SELECT COUNT(*) FROM messages m WHERE m.user_id = u.id) AS message_count,
+        (SELECT created_at FROM messages m WHERE m.user_id = u.id ORDER BY id DESC LIMIT 1) AS last_message_at,
+        (SELECT content FROM messages m WHERE m.user_id = u.id ORDER BY id DESC LIMIT 1) AS last_message,
+        (SELECT role FROM messages m WHERE m.user_id = u.id ORDER BY id DESC LIMIT 1) AS last_message_role,
+        (SELECT COUNT(*) FROM tickets t WHERE t.user_id = u.id AND t.status IN ('open', 'auto_fixing', 'escalated')) AS open_tickets,
+        (SELECT COUNT(*) FROM bot_requests r WHERE r.user_id = u.id) AS request_count,
+        (SELECT COALESCE(SUM(input_tokens + output_tokens), 0) FROM llm_usage l WHERE l.user_id = u.id AND l.created_at >= datetime('now', '-30 days')) AS tokens_30d
+      FROM users u
+      ORDER BY COALESCE(last_message_at, u.created_at) DESC
+    `);
+  }
+
+  /** Full message history (including summarized messages), newest last. */
+  messagePage(userId: number, opts: { beforeId?: number; limit: number }) {
+    return this.all<StoredMessage>(
+      `SELECT * FROM (SELECT * FROM messages WHERE user_id = ? ${opts.beforeId ? 'AND id < ?' : ''} ORDER BY id DESC LIMIT ?) ORDER BY id ASC`,
+      userId,
+      ...(opts.beforeId ? [opts.beforeId] : []),
+      opts.limit,
+    );
+  }
+
+  countUsersByStatus() {
+    return this.all<{ status: string; c: number }>('SELECT status, COUNT(*) AS c FROM users GROUP BY status');
+  }
+
+  countTicketsByStatus() {
+    return this.all<{ status: string; c: number }>('SELECT status, COUNT(*) AS c FROM tickets GROUP BY status');
+  }
+
+  messagesByDay(days: number) {
+    return this.all<{ day: string; incoming: number; outgoing: number }>(
+      `SELECT date(created_at) AS day,
+         SUM(CASE WHEN role = 'user' THEN 1 ELSE 0 END) AS incoming,
+         SUM(CASE WHEN role = 'assistant' THEN 1 ELSE 0 END) AS outgoing
+       FROM messages WHERE created_at >= datetime('now', ?) GROUP BY day ORDER BY day`,
+      `-${days} days`,
+    );
+  }
+
+  countSince(table: 'messages' | 'bot_requests' | 'tickets', sinceSql: string, extraWhere = '') {
+    return this.get<{ c: number }>(`SELECT COUNT(*) AS c FROM ${table} WHERE created_at >= datetime('now', ?) ${extraWhere}`, sinceSql)!.c;
+  }
+
+  listTicketsWithUser(opts: { statuses?: TicketStatus[]; userId?: number; limit?: number }) {
+    const where: string[] = [];
+    const params: SQLInputValue[] = [];
+    if (opts.userId) {
+      where.push('t.user_id = ?');
+      params.push(opts.userId);
+    }
+    if (opts.statuses?.length) {
+      where.push(`t.status IN (${opts.statuses.map(() => '?').join(',')})`);
+      params.push(...opts.statuses);
+    }
+    return this.all<Ticket & { user_name: string | null }>(
+      `SELECT t.*, COALESCE(u.display_name, u.push_name, u.wa_id) AS user_name FROM tickets t JOIN users u ON u.id = t.user_id
+       ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY t.updated_at DESC, t.id DESC LIMIT ?`,
+      ...params,
+      opts.limit ?? 200,
+    );
+  }
+
+  listBotRequests(opts: { userId?: number; limit?: number } = {}) {
+    return this.all<BotRequest & { user_name: string | null }>(
+      `SELECT r.*, COALESCE(u.display_name, u.push_name, u.wa_id) AS user_name FROM bot_requests r JOIN users u ON u.id = r.user_id
+       ${opts.userId ? 'WHERE r.user_id = ?' : ''} ORDER BY r.id DESC LIMIT ?`,
+      ...(opts.userId ? [opts.userId] : []),
+      opts.limit ?? 200,
+    );
+  }
+
+  listActions(opts: { userId?: number; ticketId?: number; limit?: number } = {}) {
+    const where: string[] = [];
+    const params: SQLInputValue[] = [];
+    if (opts.userId) {
+      where.push('a.user_id = ?');
+      params.push(opts.userId);
+    }
+    if (opts.ticketId) {
+      where.push('a.ticket_id = ?');
+      params.push(opts.ticketId);
+    }
+    return this.all<ActionLogEntry>(
+      `SELECT a.*, COALESCE(u.display_name, u.push_name, u.wa_id) AS user_name FROM action_log a LEFT JOIN users u ON u.id = a.user_id
+       ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY a.id DESC LIMIT ?`,
+      ...params,
+      opts.limit ?? 100,
+    );
+  }
+
+  watchesForTicket(ticketId: number) {
+    return this.all<Watch>('SELECT * FROM watches WHERE ticket_id = ? ORDER BY id', ticketId);
+  }
+
+  /** Permanently removes a user and everything stored about them. */
+  deleteUser(id: number) {
+    this.db.exec('BEGIN');
+    try {
+      for (const table of ['messages', 'facts', 'watches', 'bot_requests', 'tickets']) this.run(`DELETE FROM ${table} WHERE user_id = ?`, id);
+      this.run('DELETE FROM notified WHERE user_id = ?', id);
+      this.run('UPDATE action_log SET user_id = NULL WHERE user_id = ?', id);
+      this.run('UPDATE llm_usage SET user_id = NULL WHERE user_id = ?', id);
+      this.run('DELETE FROM users WHERE id = ?', id);
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+    bus.emitEvent({ type: 'user', userId: id });
   }
 }

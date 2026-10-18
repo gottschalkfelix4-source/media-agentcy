@@ -1,5 +1,5 @@
 import type { User } from '../db/repo.js';
-import type { ChatMessage, ImageInput } from '../llm/index.js';
+import type { ChatMessage, CompletionRequest, ImageInput } from '../llm/index.js';
 import { adminTools } from './adminTools.js';
 import type { AppContext } from './context.js';
 import { adminSystemPrompt, SUMMARY_PROMPT, userSystemPrompt } from './prompts.js';
@@ -8,6 +8,8 @@ import { userTools } from './userTools.js';
 
 export const EVENT_PREFIX = '[SYSTEM-EREIGNIS]';
 
+type UsageKind = 'message' | 'event' | 'summary' | 'console';
+
 export class Agent {
   private readonly userSpecs = userTools.map(toSpec);
   private readonly adminSpecs = adminTools.map(toSpec);
@@ -15,8 +17,8 @@ export class Agent {
   constructor(private readonly ctx: AppContext) {}
 
   /** Handles a message from the user and returns the reply text. */
-  async handleMessage(user: User, text: string, images?: ImageInput[]): Promise<string> {
-    const reply = await this.run(user, { role: 'user', content: text, images });
+  async handleMessage(user: User, text: string, images?: ImageInput[], kind: UsageKind = 'message'): Promise<string> {
+    const reply = await this.run(user, { role: 'user', content: text, images }, kind);
     this.ctx.repo.addMessage(user.id, 'user', images?.length ? `${text}\n[${images.length} Bild(er) gesendet]` : text);
     this.ctx.repo.addMessage(user.id, 'assistant', reply);
     void this.maybeSummarize(user.id);
@@ -26,15 +28,23 @@ export class Agent {
   /** Handles a system event (e.g. "your request is available") and returns the message for the user. */
   async handleEvent(user: User, eventText: string): Promise<string> {
     const content = `${EVENT_PREFIX} ${eventText}`;
-    const reply = await this.run(user, { role: 'user', content });
+    const reply = await this.run(user, { role: 'user', content }, 'event');
     this.ctx.repo.addMessage(user.id, 'event', content);
     this.ctx.repo.addMessage(user.id, 'assistant', reply);
     void this.maybeSummarize(user.id);
     return reply;
   }
 
-  private async run(user: User, incoming: Extract<ChatMessage, { role: 'user' }>): Promise<string> {
-    const { config, repo, services, llm, logger } = this.ctx;
+  /** LLM call with usage tracking. Reads ctx.llm at call time so provider changes apply immediately. */
+  private async complete(userId: number, kind: UsageKind, req: CompletionRequest) {
+    const started = Date.now();
+    const res = await this.ctx.llm.complete(req);
+    this.ctx.repo.addUsage({ userId, kind, model: req.model, input: res.usage?.input, output: res.usage?.output, durationMs: Date.now() - started });
+    return res;
+  }
+
+  private async run(user: User, incoming: Extract<ChatMessage, { role: 'user' }>, kind: UsageKind): Promise<string> {
+    const { config, repo, services, logger } = this.ctx;
     const isAdmin = user.role === 'admin';
     const tools: Tool[] = isAdmin ? adminTools : userTools;
     const specs = isAdmin ? this.adminSpecs : this.userSpecs;
@@ -48,7 +58,7 @@ export class Agent {
     const model = isAdmin ? config.llm.adminModel : config.llm.model;
 
     for (let round = 0; round < config.MAX_TOOL_ROUNDS; round++) {
-      const res = await llm.complete({ messages, tools: specs, model });
+      const res = await this.complete(user.id, kind, { messages, tools: specs, model });
       if (!res.toolCalls.length) {
         const text = res.content?.trim();
         return text || '🤔 Dazu fällt mir gerade nichts ein – kannst du es anders formulieren?';
@@ -64,7 +74,7 @@ export class Agent {
 
     // Too many tool rounds: ask the model for a final answer without tools.
     messages.push({ role: 'user', content: `${EVENT_PREFIX} Tool-Limit erreicht. Fasse für den Nutzer zusammen, was du bisher herausgefunden/gemacht hast.` });
-    const final = await llm.complete({ messages, model });
+    const final = await this.complete(user.id, kind, { messages, model });
     return final.content?.trim() || 'Ich hänge gerade fest – ich gebe dem Admin Bescheid.';
   }
 
@@ -72,7 +82,7 @@ export class Agent {
 
   /** Rolls older messages into the user's long-term summary and extracts new facts. */
   private async maybeSummarize(userId: number) {
-    const { config, repo, llm, logger } = this.ctx;
+    const { config, repo, logger } = this.ctx;
     if (this.summarizing.has(userId)) return;
     const count = repo.unsummarizedCount(userId);
     if (count <= config.SUMMARIZE_AFTER) return;
@@ -82,7 +92,7 @@ export class Agent {
       const old = repo.oldestUnsummarized(userId, count - config.HISTORY_LIMIT);
       const facts = repo.listFacts(userId);
       const transcript = old.map((m) => `${m.created_at} ${m.role === 'assistant' ? 'Bot' : m.role === 'event' ? 'System' : 'Nutzer'}: ${m.content}`).join('\n');
-      const res = await llm.complete({
+      const res = await this.complete(userId, 'summary', {
         model: config.llm.model,
         messages: [
           { role: 'system', content: SUMMARY_PROMPT },

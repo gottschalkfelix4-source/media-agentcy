@@ -28,14 +28,29 @@ export class Poller {
     if (this.timer) clearInterval(this.timer);
   }
 
+  /** Applies a changed interval. */
+  restart() {
+    this.stop();
+    this.timer = setInterval(() => void this.runOnce(), Math.max(1, this.ctx.config.NOTIFY_POLL_MINUTES) * 60_000);
+  }
+
+  get busy() {
+    return this.running;
+  }
+
+  lastRun?: { at: string; ok: boolean };
+
   async runOnce() {
     if (this.running) return;
     this.running = true;
     try {
-      await this.step('bot-requests', () => this.checkBotRequests());
-      await this.step('seerr', () => this.checkSeerr());
-      await this.step('ombi', () => this.checkOmbi());
-      await this.step('watches', () => this.checkWatches());
+      const results = [
+        await this.step('bot-requests', () => this.checkBotRequests()),
+        await this.step('seerr', () => this.checkSeerr()),
+        await this.step('ombi', () => this.checkOmbi()),
+        await this.step('watches', () => this.checkWatches()),
+      ];
+      this.lastRun = { at: new Date().toISOString(), ok: results.every(Boolean) };
     } finally {
       this.running = false;
     }
@@ -44,8 +59,10 @@ export class Poller {
   private async step(name: string, fn: () => Promise<void>) {
     try {
       await fn();
+      return true;
     } catch (err) {
       this.ctx.logger.warn({ err, step: name }, 'Poller-Schritt fehlgeschlagen');
+      return false;
     }
   }
 

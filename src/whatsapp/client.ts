@@ -16,6 +16,7 @@ import {
 import qrcodeTerminal from 'qrcode-terminal';
 import type { Messenger } from '../agent/context.js';
 import type { Config } from '../config.js';
+import { bus } from '../events.js';
 import type { User } from '../db/repo.js';
 import type { ImageInput } from '../llm/index.js';
 import type { Logger } from '../logger.js';
@@ -30,8 +31,12 @@ export class WhatsAppClient implements Messenger {
   private sock?: WASocket;
   private sendChain: Promise<unknown> = Promise.resolve();
   private reconnectAttempts = 0;
-  state: ConnectionState = 'starting';
+  private _state: ConnectionState = 'starting';
   latestQr?: string;
+  /** Own WhatsApp id and name once connected. */
+  me?: { id: string; name?: string };
+  connectedSince?: string;
+  private stopped = false;
   onMessage?: (msg: IncomingMessage) => Promise<void>;
 
   constructor(
@@ -39,7 +44,18 @@ export class WhatsAppClient implements Messenger {
     private readonly logger: Logger,
   ) {}
 
+  get state() {
+    return this._state;
+  }
+
+  private set state(s: ConnectionState) {
+    if (s === this._state) return;
+    this._state = s;
+    bus.emitEvent({ type: 'whatsapp', state: s });
+  }
+
   async start() {
+    this.stopped = false;
     const { state, saveCreds } = await useMultiFileAuthState(this.config.waAuthDir);
     const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: undefined }));
 
@@ -58,18 +74,23 @@ export class WhatsAppClient implements Messenger {
 
     sock.ev.on('connection.update', (u) => {
       if (u.qr) {
-        this.state = 'qr';
         this.latestQr = u.qr;
+        this.state = 'qr';
+        bus.emitEvent({ type: 'whatsapp', state: 'qr' });
         this.logger.info(`WhatsApp-Login: QR-Code mit dem Bot-Handy scannen (oder http://<host>:${this.config.HTTP_PORT}/qr öffnen)`);
         qrcodeTerminal.generate(u.qr, { small: true });
       }
       if (u.connection === 'open') {
-        this.state = 'open';
         this.latestQr = undefined;
         this.reconnectAttempts = 0;
+        this.me = sock.user ? { id: sock.user.id.split(':')[0].split('@')[0], name: sock.user.name ?? undefined } : undefined;
+        this.connectedSince = new Date().toISOString();
+        this.state = 'open';
         this.logger.info({ me: sock.user?.id }, 'WhatsApp verbunden');
       }
       if (u.connection === 'close') {
+        this.connectedSince = undefined;
+        if (this.stopped || this.sock !== sock) return;
         const code = (u.lastDisconnect?.error as { output?: { statusCode?: number } } | undefined)?.output?.statusCode;
         if (code === DisconnectReason.loggedOut) {
           this.state = 'logged_out';
@@ -172,6 +193,26 @@ export class WhatsAppClient implements Messenger {
   }
 
   async stop() {
+    this.stopped = true;
     this.sock?.end(undefined);
+  }
+
+  /** Unlinks the bot from the WhatsApp account; a new QR code follows. */
+  async logout() {
+    if (this.sock && this.state === 'open') {
+      await this.sock.logout(); // triggers connection close with loggedOut → auth wipe + restart
+      return;
+    }
+    await this.stop();
+    rmSync(this.config.waAuthDir, { recursive: true, force: true });
+    this.state = 'logged_out';
+    setTimeout(() => void this.start(), 1000);
+  }
+
+  /** Reconnects with the stored login. */
+  async restart() {
+    await this.stop();
+    this.state = 'starting';
+    setTimeout(() => void this.start(), 500);
   }
 }

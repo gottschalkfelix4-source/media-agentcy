@@ -1,6 +1,7 @@
 import type { Agent } from '../agent/agent.js';
 import { notifyAdmins, userLabel, type AppContext } from '../agent/context.js';
 import type { User } from '../db/repo.js';
+import { bus } from '../events.js';
 import { pingAll } from '../integrations/index.js';
 import type { ImageInput } from '../llm/index.js';
 
@@ -20,6 +21,17 @@ interface Pending {
   timer?: NodeJS.Timeout;
 }
 
+/** Live processing state of a user's conversation, shown in the web UI. */
+export interface ConversationRuntime {
+  state: 'idle' | 'collecting' | 'working';
+  /** Jobs waiting behind the current one. */
+  queued: number;
+  since?: string;
+  lastReplyAt?: string;
+  lastDurationMs?: number;
+  lastError?: { at: string; message: string };
+}
+
 /**
  * Routes incoming messages: user lookup/onboarding, access control, slash
  * commands, debouncing of message bursts and strictly sequential processing
@@ -28,6 +40,7 @@ interface Pending {
 export class Router {
   private pending = new Map<number, Pending>();
   private chains = new Map<number, Promise<void>>();
+  private runtime = new Map<number, ConversationRuntime>();
   private lastErrorAlert = 0;
 
   constructor(
@@ -64,6 +77,13 @@ export class Router {
 
     if (user.status === 'blocked') return;
 
+    if (user.bot_paused && user.status === 'active') {
+      // Admin took over this chat: keep the message for the web UI and the bot's context, but don't answer.
+      repo.addMessage(user.id, 'user', msg.images?.length ? `${msg.text}
+[${msg.images.length} Bild(er) gesendet]` : msg.text);
+      return;
+    }
+
     if (user.status === 'pending') {
       if (!user.admin_notified_at) {
         repo.updateUser(user.id, { admin_notified_at: new Date().toISOString() });
@@ -86,6 +106,39 @@ export class Router {
 
     if (await this.handleCommand(user, msg.text)) return;
     this.buffer(user.id, msg.text, msg.images);
+  }
+
+  /** Live state of all conversations that are not idle, plus the last result per user. */
+  runtimeSnapshot(): Record<number, ConversationRuntime> {
+    return Object.fromEntries(this.runtime);
+  }
+
+  runtimeFor(userId: number): ConversationRuntime {
+    return this.runtime.get(userId) ?? { state: 'idle', queued: 0 };
+  }
+
+  private setRuntime(userId: number, patch: Partial<ConversationRuntime>) {
+    const next = { ...this.runtimeFor(userId), ...patch };
+    this.runtime.set(userId, next);
+    bus.emitEvent({ type: 'runtime', userId });
+  }
+
+  /**
+   * Runs a message through the agent in the user's queue and returns the reply
+   * without sending it anywhere (web console for the admin agent).
+   */
+  ask(userId: number, text: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      this.enqueue(
+        userId,
+        async () => {
+          const user = this.ctx.repo.getUser(userId);
+          if (!user) throw new Error('Nutzer nicht gefunden');
+          resolve(await this.agent.handleMessage(user, text, undefined, 'console'));
+        },
+        { onError: reject, silent: true },
+      );
+    });
   }
 
   /** Queue a system event for a user (notifications, admin messages). */
@@ -132,6 +185,7 @@ export class Router {
     if (images?.length) p.images.push(...images);
     if (p.timer) clearTimeout(p.timer);
     p.timer = setTimeout(() => this.flush(userId), this.ctx.config.DEBOUNCE_MS);
+    if (this.runtimeFor(userId).state === 'idle') this.setRuntime(userId, { state: 'collecting', since: new Date().toISOString() });
   }
 
   private flush(userId: number) {
@@ -148,17 +202,27 @@ export class Router {
     });
   }
 
-  private enqueue(userId: number, job: () => Promise<void>) {
+  private enqueue(userId: number, job: () => Promise<void>, opts: { onError?: (err: unknown) => void; silent?: boolean } = {}) {
     const prev = this.chains.get(userId) ?? Promise.resolve();
+    const rt = this.runtimeFor(userId);
+    if (rt.state === 'working') this.setRuntime(userId, { queued: rt.queued + 1 });
     const next = prev.then(async () => {
       const user = this.ctx.repo.getUser(userId);
-      if (user) await this.ctx.messenger.setTyping?.(user, true).catch(() => undefined);
+      const started = Date.now();
+      const cur = this.runtimeFor(userId);
+      this.setRuntime(userId, { state: 'working', since: new Date(started).toISOString(), queued: cur.state === 'working' ? Math.max(0, cur.queued - 1) : cur.queued });
+      if (user && !opts.silent) await this.ctx.messenger.setTyping?.(user, true).catch(() => undefined);
       try {
         await job();
+        this.setRuntime(userId, { lastReplyAt: new Date().toISOString(), lastDurationMs: Date.now() - started });
       } catch (err) {
-        await this.onError(userId, err);
+        this.setRuntime(userId, { lastError: { at: new Date().toISOString(), message: (err as Error).message?.slice(0, 300) ?? String(err) } });
+        if (opts.onError) opts.onError(err);
+        else await this.onError(userId, err);
       } finally {
-        if (user) await this.ctx.messenger.setTyping?.(user, false).catch(() => undefined);
+        if (user && !opts.silent) await this.ctx.messenger.setTyping?.(user, false).catch(() => undefined);
+        const after = this.runtimeFor(userId);
+        if (after.queued === 0 && !this.pending.has(userId)) this.setRuntime(userId, { state: 'idle', since: undefined });
       }
     });
     this.chains.set(userId, next);

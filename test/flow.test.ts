@@ -13,7 +13,8 @@ import { after, before, test } from 'node:test';
 // ---------------------------------------------------------------- fake media stack
 
 const calls: { method: string; path: string; headers: IncomingMessage['headers']; body?: unknown }[] = [];
-const state = { dune: { status: 2, hasFile: true, fileId: 77 } };
+const state = { dune: { status: 2, hasFile: true, fileId: 77 }, arrival: { status: 3 } };
+const fiveDaysAgo = new Date(Date.now() - 5 * 86_400_000).toISOString();
 
 const fake = createServer((req, res) => {
   let raw = '';
@@ -26,8 +27,16 @@ const fake = createServer((req, res) => {
 
     // Seerr
     if (p === '/seerr/api/v1/status') return json({ version: '2.0.0' });
+    if (p === '/seerr/api/v1/search' && /arrival/i.test(url.searchParams.get('query') ?? ''))
+      return json({ results: [{ id: 329865, mediaType: 'movie', title: 'Arrival', releaseDate: '2016-11-10', mediaInfo: { status: state.arrival.status } }] });
     if (p === '/seerr/api/v1/search')
       return json({ results: [{ id: 438631, mediaType: 'movie', title: 'Dune', releaseDate: '2021-09-15', mediaInfo: undefined }] });
+    if (p === '/seerr/api/v1/movie/329865')
+      return json({
+        id: 329865,
+        title: 'Arrival',
+        mediaInfo: { status: state.arrival.status, requests: [{ id: 777, status: 2, createdAt: fiveDaysAgo, requestedBy: { id: 9 } }] },
+      });
     if (p === '/seerr/api/v1/request' && req.method === 'POST') return json({ id: 501, status: 2, media: { tmdbId: 438631 } });
     if (p === '/seerr/api/v1/request') return json({ results: [] });
     if (p === '/seerr/api/v1/movie/438631') return json({ id: 438631, title: 'Dune', mediaInfo: { status: state.dune.status } });
@@ -43,9 +52,15 @@ const fake = createServer((req, res) => {
       movieFile: state.dune.hasFile ? { id: state.dune.fileId, relativePath: 'Dune.mkv', size: 4e9, quality: { quality: { name: 'Bluray-1080p' } } } : undefined,
     });
     if (p === '/radarr/api/v3/system/status') return json({ version: '5.0' });
-    if (p === '/radarr/api/v3/movie') return json([movie()]);
+    const arrival = { id: 13, title: 'Arrival', year: 2016, tmdbId: 329865, monitored: true, hasFile: false, isAvailable: true };
+    if (p === '/radarr/api/v3/movie') return json(url.searchParams.get('tmdbId') === '329865' ? [arrival] : [movie()]);
     if (p === '/radarr/api/v3/movie/12') return json(movie());
     if (p === '/radarr/api/v3/queue') return json({ records: [] });
+    if (p === '/radarr/api/v3/history/movie' && url.searchParams.get('movieId') === '13')
+      return json([
+        { eventType: 'grabbed', date: '2026-10-12T10:00:00Z', sourceTitle: 'Arrival.2016.1080p' },
+        { eventType: 'downloadFailed', date: '2026-10-12T11:00:00Z', sourceTitle: 'Arrival.2016.1080p', data: { message: 'Unpack failed' } },
+      ]);
     if (p === '/radarr/api/v3/history/movie') return json([{ eventType: 'downloadFolderImported', date: '2026-01-01', sourceTitle: 'Dune.2021.1080p' }]);
     if (p.startsWith('/radarr/api/v3/moviefile/') && req.method === 'DELETE') {
       state.dune.hasFile = false;
@@ -235,4 +250,44 @@ test('user agent cannot use admin tools', async () => {
   await app.router.onIncoming({ waId: USER, text: 'schick allen eine Nachricht' });
   await waitFor(() => sent.length > before);
   assert.ok(!sent.slice(before).some((s) => s.text === 'spam'));
+});
+
+test('user asks about a stuck request → agent finds the failed download, searches again, user is told when it is there', async () => {
+  script.push(
+    call('check_request', { title: 'Arrival' }),
+    call('request_fix', { action: 'search_again', mediaType: 'movie', tmdbId: 329865, title: 'Arrival', requestId: 777 }),
+    say('Der Download von Arrival ist schiefgegangen, ich habe neu suchen lassen. Ich melde mich, sobald er da ist.'),
+  );
+  const before = sent.length;
+  await app.router.onIncoming({ waId: USER, text: 'Was ist eigentlich mit Arrival? Der ist immer noch nicht da' });
+  await waitFor(() => sent.length > before);
+
+  const status = JSON.parse(toolOutputs.check_request[0]);
+  assert.equal(status.stage, 'download_failed');
+  assert.equal(status.suggestedAction, 'search_again');
+  assert.equal(status.requestId, 777);
+  assert.equal(status.waitingDays, 5);
+  assert.equal(status.notifyWhenAvailable, true);
+  assert.match(toolOutputs.request_fix[0], /"ok":true/);
+  assert.ok(calls.some((c) => c.path === '/radarr/api/v3/command' && JSON.stringify(c.body) === JSON.stringify({ name: 'MoviesSearch', movieIds: [13] })));
+
+  // the same fix right away again is refused (cooldown)
+  script.push(call('request_fix', { action: 'search_again', mediaType: 'movie', tmdbId: 329865, title: 'Arrival' }), say('ok'));
+  const b2 = sent.length;
+  await app.router.onIncoming({ waId: USER, text: 'Kannst du nochmal suchen?' });
+  await waitFor(() => sent.length > b2);
+  assert.match(toolOutputs.request_fix.at(-1)!, /vor kurzem schon/);
+
+  // becomes available → neutral notification, no media server named
+  state.arrival.status = 5;
+  script.push((msgs) => {
+    const event = (msgs.at(-1) as { content: string }).content;
+    assert.match(event, /SYSTEM-EREIGNIS.*Arrival.*verfügbar/s);
+    assert.doesNotMatch(event, /auf (Jellyfin|Plex)/);
+    return { content: 'Arrival ist jetzt da! 🍿', toolCalls: [] };
+  });
+  const b3 = sent.length;
+  await app.poller.runOnce();
+  await waitFor(() => sent.slice(b3).some((s) => s.to === USER));
+  assert.match(lastTo(USER), /Arrival ist jetzt da/);
 });

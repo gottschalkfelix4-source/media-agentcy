@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { User } from '../db/repo.js';
 import { pingAll } from '../integrations/index.js';
 import { userLabel } from './context.js';
+import { checkRequest, requestFix } from './requestTools.js';
 import { defineTool, ToolError, type Tool, type ToolContext } from './tool.js';
 import {
   checkDownloads,
@@ -319,6 +320,8 @@ export const adminTools: Tool[] = [
   // shared media tools (run without per-user limits for admins)
   searchMedia,
   requestMedia,
+  checkRequest,
+  requestFix,
   checkLibrary,
   diagnoseMedia,
   checkDownloads,

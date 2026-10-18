@@ -66,7 +66,7 @@ function queueInfo(q: QueueRecord) {
     health: q.trackedDownloadStatus,
     progress: progress !== undefined ? `${progress}%` : undefined,
     timeLeft: q.timeleft,
-    problems: [q.errorMessage, ...(q.statusMessages ?? []).flatMap((m) => [m.title, ...(m.messages ?? [])])].filter(Boolean),
+    problems: [q.errorMessage, ...(q.statusMessages ?? []).flatMap((m) => [m.title, ...(m.messages ?? [])])].filter((x): x is string => !!x),
   };
 }
 
@@ -106,6 +106,9 @@ interface RadarrMovie {
   hasFile: boolean;
   isAvailable?: boolean;
   status?: string;
+  inCinemas?: string;
+  digitalRelease?: string;
+  physicalRelease?: string;
   movieFile?: ArrFile;
   alternateTitles?: { title: string }[];
 }
@@ -159,6 +162,13 @@ export class RadarrClient extends ArrBase {
       monitored: m.monitored,
       hasFile: m.hasFile,
       status: m.status,
+      /** false = not released for download yet (only announced or in cinemas). */
+      isAvailable: m.isAvailable,
+      releases: {
+        cinema: m.inCinemas?.slice(0, 10),
+        digital: m.digitalRelease?.slice(0, 10),
+        physical: m.physicalRelease?.slice(0, 10),
+      },
       file: fileInfo(m.movieFile),
     };
   }

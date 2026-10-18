@@ -3,6 +3,7 @@ import { pingAll } from '../integrations/index.js';
 import { MEDIA_STATUS, REQUEST_STATUS } from '../integrations/seerr.js';
 import { titleScore } from '../integrations/http.js';
 import { notifyAdmins, userLabel } from './context.js';
+import { checkRequest, requestFix } from './requestTools.js';
 import { defineTool, ToolError, type Tool, type ToolContext } from './tool.js';
 
 const mediaType = z.enum(['movie', 'tv']).describe('movie = Film, tv = Serie');
@@ -95,7 +96,7 @@ export const requestMedia = defineTool({
 
 export const myRequests = defineTool({
   name: 'my_requests',
-  description: 'Listet die Medienanfragen des Nutzers mit aktuellem Status.',
+  description: 'Listet die Medienanfragen des Nutzers mit aktuellem Status. Für Details oder wenn eine Anfrage hängt: check_request.',
   schema: z.object({}),
   async run(_args, ctx) {
     const { seerr } = ctx.services;
@@ -105,6 +106,7 @@ export const myRequests = defineTool({
         reqs.map(async (r) => ({
           title: await seerr.title(r.media.mediaType, r.media.tmdbId).catch(() => `TMDB ${r.media.tmdbId}`),
           type: r.media.mediaType,
+          tmdbId: r.media.tmdbId,
           requested: r.createdAt.slice(0, 10),
           request: REQUEST_STATUS[r.status] ?? r.status,
           media: MEDIA_STATUS[r.media.status] ?? r.media.status,
@@ -119,7 +121,7 @@ export const myRequests = defineTool({
           const d = await seerr.details(r.media_type, r.tmdb_id).catch(() => undefined);
           if (d?.mediaInfo) status = MEDIA_STATUS[d.mediaInfo.status] ?? status;
         }
-        return { title: r.title, type: r.media_type, requested: r.created_at.slice(0, 10), status };
+        return { title: r.title, type: r.media_type, tmdbId: r.tmdb_id, requested: r.created_at.slice(0, 10), status };
       }),
     );
   },
@@ -485,6 +487,8 @@ export const userTools: Tool[] = [
   searchMedia,
   requestMedia,
   myRequests,
+  checkRequest,
+  requestFix,
   checkLibrary,
   reportProblem,
   diagnoseMedia,

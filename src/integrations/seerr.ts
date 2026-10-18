@@ -82,7 +82,11 @@ export class SeerrClient {
       title?: string;
       name?: string;
       seasons?: { seasonNumber: number; episodeCount: number; name: string }[];
-      mediaInfo?: { status: number; seasons?: { seasonNumber: number; status: number }[] };
+      mediaInfo?: {
+        status: number;
+        seasons?: { seasonNumber: number; status: number }[];
+        requests?: { id: number; status: number; createdAt: string; requestedBy?: { id: number } }[];
+      };
     }>(`/${mediaType}/${tmdbId}`, { language });
   }
 
@@ -109,6 +113,11 @@ export class SeerrClient {
 
   async getRequest(id: number) {
     return this.api.get<SeerrRequest>(`/request/${id}`);
+  }
+
+  /** Sends a failed request to Radarr/Sonarr again. */
+  async retryRequest(id: number) {
+    return this.api.post<SeerrRequest>(`/request/${id}/retry`);
   }
 
   async recentRequests(filter: 'all' | 'available' | 'processing' | 'pending' = 'all', take = 100) {

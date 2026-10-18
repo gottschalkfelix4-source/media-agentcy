@@ -23,7 +23,8 @@
 | | |
 |---|---|
 | 🎬 **Medienwünsche** | „Kannst du Dune 2 besorgen?“ → Suche über Jellyseerr/Overseerr oder Ombi, Anfrage im Namen des Nutzers, Tageslimit pro Nutzer |
-| 🔔 **Benachrichtigungen** | Sobald eine Anfrage verfügbar ist, bekommt der Nutzer eine persönliche WhatsApp, auch für Anfragen von der Jellyseerr-Webseite |
+| 🔍 **Anfragen nachverfolgen** | „Was ist mit meiner Anfrage?“ → der Bot prüft Jellyseerr, Radarr/Sonarr und die Mediathek, erklärt in einfachen Worten, wo es hängt, und hilft gleich: neu suchen, Mediathek neu einlesen, Anfrage wiederholen oder den Admin erinnern (mit Sperrfrist gegen Dauerschleifen) |
+| 🔔 **Benachrichtigungen** | Sobald eine Anfrage verfügbar ist, bekommt der Nutzer eine persönliche WhatsApp, auch für Anfragen von der Jellyseerr-Webseite. Die Nachricht sagt nur „jetzt verfügbar“, ohne Jellyfin und Plex zu unterscheiden |
 | 🛠️ **Problemmeldungen** | Ticket → Diagnose über Radarr/Sonarr/Jellyfin/Plex → kleine Fehler selbst beheben (Datei ersetzen, fehlende Folgen suchen, Rescan, Metadaten) → Nutzer informieren, wenn die neue Datei da ist |
 | 🚨 **Eskalation** | Größere Probleme gehen per WhatsApp an dich. Du sprichst im selben Chat mit dem Agenten, er richtet den Nutzern deine Antworten aus |
 | 🧠 **Gedächtnis pro Nutzer** | Fakten (Geräte, Vorlieben …), laufende Zusammenfassung früherer Gespräche, Ticket- und Anfrageverlauf |

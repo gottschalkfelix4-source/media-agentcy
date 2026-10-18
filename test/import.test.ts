@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { User } from '../src/db/repo.js';
+import { parseTvUsers } from '../src/integrations/plex.js';
 import { mergeAccounts, normalizePhone } from '../src/server/userImport.js';
 
 const jf = (id: string, name: string) => ({ id, name, admin: false, disabled: false });
@@ -50,4 +51,19 @@ test('phone numbers need a country code', () => {
   assert.ok('error' in normalizePhone('0151 12345678'));
   assert.ok('error' in normalizePhone('+49 abc'));
   assert.ok('error' in normalizePhone('+49 15'));
+});
+
+test('plex.tv friend list (v1 XML) is parsed, entities decoded', () => {
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<MediaContainer friendlyName="myPlex" identifier="com.plexapp.plugins.myplex" machineIdentifier="x" totalSize="2" size="2">
+  <User id="11" title="max_m" username="max_m" email="max@example.com" recommendationsPlaylistId="" thumb="https://plex.tv/users/a/avatar" protected="0" home="0" restricted="0">
+    <Server id="1" serverId="2" machineIdentifier="m" name="Kino" lastSeenAt="1" numLibraries="3" allLibraries="1" owned="1" pending="0"/>
+  </User>
+  <User id="12" title="Oma &amp; Opa" username="" email="" home="1" restricted="1"/>
+</MediaContainer>`;
+  assert.deepEqual(parseTvUsers(xml), [
+    { id: 11, title: 'max_m', username: 'max_m', email: 'max@example.com' },
+    { id: 12, title: 'Oma & Opa', username: '', email: '' },
+  ]);
+  assert.deepEqual(parseTvUsers({ MediaContainer: { User: [{ id: 3, title: 'jonas' }] } }), [{ id: 3, title: 'jonas' }]);
 });

@@ -80,16 +80,17 @@ export class Poller {
       .catch((err: unknown) => this.ctx.logger.warn({ err }, 'Benachrichtigung fehlgeschlagen'));
   }
 
+  /** Deliberately the same for Jellyfin and Plex users: the bot never names a specific media server here. */
   private availableEvent(title: string, type: string, partial: boolean) {
-    const where = [this.ctx.services.jellyfin && 'Jellyfin', this.ctx.services.plex && 'Plex'].filter(Boolean).join('/') || 'dem Server';
+    const neutral = 'Nenne dabei keinen bestimmten Mediaserver (weder Jellyfin noch Plex), sag einfach, dass es jetzt zum Schauen bereitsteht.';
     return partial
       ? {
-          event: `Die angefragte Serie "${title}" ist jetzt *teilweise* auf ${where} verfügbar (erste Folgen/Staffeln sind da, der Rest folgt). Sag dem Nutzer kurz Bescheid.`,
-          template: `📺 Gute Nachrichten: Die ersten Folgen von *${title}* sind jetzt auf ${where} verfügbar – der Rest folgt!`,
+          event: `Die angefragte Serie "${title}" ist jetzt *teilweise* verfügbar (erste Folgen/Staffeln sind da, der Rest folgt). Sag dem Nutzer kurz Bescheid. ${neutral}`,
+          template: `📺 Gute Nachrichten: Die ersten Folgen von *${title}* sind jetzt da, der Rest folgt!`,
         }
       : {
-          event: `Die Anfrage "${title}" (${type === 'movie' ? 'Film' : 'Serie'}) ist jetzt auf ${where} verfügbar. Sag dem Nutzer kurz und freundlich Bescheid (viel Spaß wünschen).`,
-          template: `🎬 *${title}* ist jetzt auf ${where} verfügbar. Viel Spaß!`,
+          event: `Die Anfrage "${title}" (${type === 'movie' ? 'Film' : 'Serie'}) ist abgeschlossen und jetzt verfügbar. Sag dem Nutzer kurz und freundlich Bescheid (viel Spaß wünschen). ${neutral}`,
+          template: `🎬 *${title}* ist jetzt verfügbar. Viel Spaß beim Schauen!`,
         };
   }
 

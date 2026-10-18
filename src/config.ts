@@ -123,7 +123,8 @@ export type Config = ReturnType<typeof derive>;
 
 /** Builds a config from raw string values (env vars, optionally overlaid with settings from the web UI). */
 export function buildConfig(source: Record<string, string | undefined>): { ok: true; config: Config } | { ok: false; error: string } {
-  const parsed = schema.safeParse(source);
+  // Empty values count as unset (Unraid and docker-compose pass blank template fields as "").
+  const parsed = schema.safeParse(Object.fromEntries(Object.entries(source).filter(([, v]) => v !== undefined && v.trim() !== '')));
   if (!parsed.success) return { ok: false, error: z.prettifyError(parsed.error) };
   const c = derive(parsed.data);
   if (c.llm.provider === 'custom' && !c.llm.baseUrl) {

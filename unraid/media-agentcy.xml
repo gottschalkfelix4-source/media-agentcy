@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>media-agentcy</Name>
+  <Repository>registry.felix-cloud.net/root/media-agentcy:latest</Repository>
+  <Registry>https://git.felix-cloud.net/root/media-agentcy/container_registry</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>bash</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://git.felix-cloud.net/root/media-agentcy/-/issues</Support>
+  <Project>https://git.felix-cloud.net/root/media-agentcy</Project>
+  <Overview>WhatsApp-KI-Assistent für die Nutzer deines Jellyfin-/Plex-Servers. Nimmt Medienwünsche entgegen (Jellyseerr/Overseerr/Ombi), benachrichtigt, sobald etwas verfügbar ist, diagnostiziert Wiedergabeprobleme und behebt kleine Medienfehler selbst (Sonarr/Radarr). Größere Probleme eskaliert er per WhatsApp an dich. Jeder Nutzer hat sein eigenes Gedächtnis.&#xD;
+&#xD;
+Mit Web-Admin-Oberfläche: Nutzer freischalten, Chats mitlesen und übernehmen, Tickets, Token-Verbrauch und alle Einstellungen. Alles außer Port und Datenordner lässt sich nach dem Start in der Oberfläche einstellen, die Felder hier sind optional.&#xD;
+&#xD;
+Beim ersten Start ohne WEB_PASSWORD steht das Login-Passwort im Container-Log. Danach in der Oberfläche unter "WhatsApp" den QR-Code mit dem Bot-Handy scannen.</Overview>
+  <Category>MediaServer:Other Tools: Productivity:</Category>
+  <WebUI>http://[IP]:[PORT:8080]/</WebUI>
+  <TemplateURL>https://git.felix-cloud.net/root/media-agentcy/-/raw/master/unraid/media-agentcy.xml</TemplateURL>
+  <Icon>https://git.felix-cloud.net/root/media-agentcy/-/raw/master/unraid/icon.png</Icon>
+  <ExtraParams>--restart=unless-stopped</ExtraParams>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled/>
+  <DonateText/>
+  <DonateLink/>
+  <Requires>Eine eigene WhatsApp-Nummer für den Bot (Zweit-SIM/eSIM) und ein KI-Anbieter mit Tool-Calling (z. B. OpenRouter-API-Key oder ein lokales Ollama).</Requires>
+  <Config Name="Web-Oberfläche (Port)" Target="8080" Default="8085" Mode="tcp" Description="Port der Admin-Oberfläche, des QR-Codes (/qr) und des Jellyseerr-Webhooks." Type="Port" Display="always" Required="true" Mask="false">8085</Config>
+  <Config Name="Daten" Target="/data" Default="/mnt/user/appdata/media-agentcy" Mode="rw" Description="Datenbank, WhatsApp-Login und Einstellungen aus der Web-Oberfläche. Dieser Ordner gehört ins Backup." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/media-agentcy</Config>
+  <Config Name="Admin-Nummer(n)" Target="ADMIN_NUMBERS" Default="" Mode="" Description="Deine WhatsApp-Nummer mit Ländervorwahl, ohne + oder Leerzeichen, z. B. 4917612345678. Mehrere mit Komma trennen. Kann auch später in der Oberfläche gesetzt werden." Type="Variable" Display="always" Required="false" Mask="false"/>
+  <Config Name="Web-Passwort" Target="WEB_PASSWORD" Default="" Mode="" Description="Passwort für die Web-Oberfläche. Leer lassen: Beim ersten Start wird ein zufälliges Passwort ins Log geschrieben, das du in der Oberfläche ändern kannst." Type="Variable" Display="always" Required="false" Mask="true"/>
+  <Config Name="KI-Anbieter" Target="LLM_PROVIDER" Default="openrouter|openai|custom|chatgpt" Mode="" Description="openrouter / openai = API-Key nötig. custom = eigener OpenAI-kompatibler Endpoint (Ollama, LM Studio, LiteLLM), URL unten. chatgpt = ChatGPT-Abo per Codex-Login (experimentell)." Type="Variable" Display="always" Required="false" Mask="false">openrouter</Config>
+  <Config Name="KI-API-Key" Target="LLM_API_KEY" Default="" Mode="" Description="API-Key des KI-Anbieters, z. B. sk-or-… von openrouter.ai/keys." Type="Variable" Display="always" Required="false" Mask="true"/>
+  <Config Name="KI-Modell" Target="LLM_MODEL" Default="openai/gpt-4.1-mini" Mode="" Description="Muss Tool-Calling können. In der Oberfläche gibt es eine Modell-Liste zum Auswählen." Type="Variable" Display="always" Required="false" Mask="false">openai/gpt-4.1-mini</Config>
+  <Config Name="KI-Endpoint-URL" Target="LLM_BASE_URL" Default="" Mode="" Description="Nur für den Anbieter custom, z. B. http://192.168.1.10:11434/v1 für Ollama." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Zeitzone" Target="TZ" Default="Europe/Berlin" Mode="" Description="Zeitzone für Zeitangaben in Chats und Logs." Type="Variable" Display="advanced" Required="false" Mask="false">Europe/Berlin</Config>
+  <Config Name="HTTP-Token" Target="HTTP_TOKEN" Default="" Mode="" Description="Optional. Schützt /qr und /webhook zusätzlich (Aufruf dann mit ?token=…)." Type="Variable" Display="advanced" Required="false" Mask="true"/>
+  <Config Name="Log-Level" Target="LOG_LEVEL" Default="info|debug|warn|error" Mode="" Description="Ausführlichkeit der Container-Logs." Type="Variable" Display="advanced" Required="false" Mask="false">info</Config>
+</Container>

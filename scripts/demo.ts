@@ -6,7 +6,7 @@
  *
  * Alongside `npm run dev:web` the Vite dev server proxies /api to this port.
  */
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
@@ -168,5 +168,6 @@ const whatsapp = {
 };
 
 bus.emitEvent({ type: 'user', userId: anna.id });
-startHttpServer({ app, whatsapp: whatsapp as never, version: 'demo' });
+const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
+startHttpServer({ app, whatsapp: whatsapp as never, version });
 app.ctx.logger.info(`Demo läuft auf http://localhost:${app.ctx.config.HTTP_PORT} – Passwort steht in scripts/demo.ts (WEB_PASSWORD)`);

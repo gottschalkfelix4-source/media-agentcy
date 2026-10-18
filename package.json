@@ -16,7 +16,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit",
     "chat": "tsx src/cli/chat.ts",
     "test": "tsx --test test/*.test.ts",
-    "demo": "tsx scripts/demo.ts"
+    "demo": "tsx scripts/demo.ts",
+    "screenshots": "tsx scripts/screenshots.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.5",

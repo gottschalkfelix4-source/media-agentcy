@@ -8,6 +8,13 @@ COPY web ./web
 RUN npm run build && npm prune --omit=dev
 
 FROM node:24-slim
+ARG VERSION=dev
+LABEL org.opencontainers.image.title="Media Agentcy" \
+      org.opencontainers.image.description="WhatsApp-KI-Assistent für Jellyfin/Plex-Nutzer mit Web-Admin-Oberfläche" \
+      org.opencontainers.image.source="https://git.felix-cloud.net/root/media-agentcy" \
+      org.opencontainers.image.version="${VERSION}" \
+      net.unraid.docker.webui="http://[IP]:[PORT:8080]/" \
+      net.unraid.docker.icon="https://git.felix-cloud.net/root/media-agentcy/-/raw/master/unraid/icon.png"
 ENV NODE_ENV=production \
     DATA_DIR=/data \
     HTTP_PORT=8080 \

@@ -1,8 +1,8 @@
-import { useQuery } from '@tanstack/react-query';
-import { Inbox, Search } from 'lucide-react';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { Bot, Globe, Inbox, RefreshCw, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { api, type BotRequest } from '../api';
-import { Badge, Card, EmptyState, ErrorBox, Input, Loading, PageHeader, RelTime, Segmented } from '../components/ui';
+import { api, queryClient, type BotRequest } from '../api';
+import { Badge, Button, Card, EmptyState, ErrorBox, Input, Loading, PageHeader, RelTime, Segmented, toast, toastError } from '../components/ui';
 import { Link } from '../router';
 
 type Filter = 'all' | 'waiting' | 'done';
@@ -18,10 +18,30 @@ export function RequestsPage() {
       .filter((r) => !s || `${r.title} ${r.user_name ?? ''}`.toLowerCase().includes(s));
   }, [q.data, filter, search]);
   const waiting = (q.data ?? []).filter((r) => !r.notified_at).length;
+  const sync = useMutation({
+    mutationFn: () => api<{ imported: number; unmatched: number; errors: string[] }>('/requests/sync', { body: {} }),
+    onSuccess: (r) => {
+      toast(
+        `${r.imported ? `${r.imported} Anfrage${r.imported === 1 ? '' : 'n'} übernommen` : 'Nichts Neues'}${r.unmatched ? ` · ${r.unmatched} ohne verknüpften Nutzer` : ''}`,
+        r.errors.length ? 'info' : 'ok',
+      );
+      for (const e of r.errors) toastError(new Error(e));
+      void queryClient.invalidateQueries({ queryKey: ['requests'] });
+    },
+    onError: toastError,
+  });
 
   return (
     <>
-      <PageHeader title="Anfragen" subtitle="Filme und Serien, die Nutzer über den Bot angefragt haben" />
+      <PageHeader
+        title="Anfragen"
+        subtitle="Über den Bot oder auf der Jellyseerr-/Ombi-Webseite angefragt. Webseiten-Anfragen werden über die verknüpften Konten automatisch zugeordnet."
+        actions={
+          <Button variant="secondary" icon={<RefreshCw className="size-3.5" />} loading={sync.isPending} onClick={() => sync.mutate()}>
+            Jetzt abgleichen
+          </Button>
+        }
+      />
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <Segmented<Filter>
           value={filter}
@@ -76,7 +96,13 @@ export function RequestsPage() {
                         {r.user_name ?? `#${r.user_id}`}
                       </Link>
                     </td>
-                    <td className="px-2 py-2.5 text-fg-3">{r.source === 'seerr' ? 'Jellyseerr' : 'Ombi'}</td>
+                    <td className="px-2 py-2.5 text-fg-3">
+                      <span className="inline-flex items-center gap-1.5" title={r.via === 'web' ? 'Auf der Webseite angefragt' : 'Über den Bot angefragt'}>
+                        {r.via === 'web' ? <Globe className="size-3.5" /> : <Bot className="size-3.5" />}
+                        {r.source === 'seerr' ? 'Jellyseerr' : 'Ombi'}
+                        {r.via === 'web' ? ' (Webseite)' : ' (Bot)'}
+                      </span>
+                    </td>
                     <td className="px-2 py-2.5">
                       {r.notified_at ? (
                         <Badge tone="ok" title={`Benachrichtigt ${r.notified_at}`}>

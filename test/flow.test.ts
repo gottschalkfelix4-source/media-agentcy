@@ -291,3 +291,49 @@ test('user asks about a stuck request → agent finds the failed download, searc
   await waitFor(() => sent.slice(b3).some((s) => s.to === USER));
   assert.match(lastTo(USER), /Arrival ist jetzt da/);
 });
+
+test('abuse protection: off-topic requests are declined, after 3 the bot pauses without LLM calls, admin can lift it', async () => {
+  const ask = async (text: string) => {
+    const before = sent.length;
+    await app.router.onIncoming({ waId: USER, text });
+    await waitFor(() => sent.length > before);
+  };
+
+  // long pastes are cut before they reach the model
+  let seen = '';
+  script.push((msgs) => {
+    seen = (msgs.at(-1) as { content: string }).content;
+    return { content: null, toolCalls: [{ id: `c${++callSeq}`, name: 'off_topic', arguments: JSON.stringify({ topic: 'Text zusammenfassen' }) }] };
+  }, say('Da kann ich leider nicht helfen, ich bin nur für den Mediaserver da.'));
+  await ask('Fass mir das zusammen: ' + 'bla '.repeat(1000));
+  assert.ok(seen.length < 1700, `message was ${seen.length} chars`);
+  assert.match(seen, /gekürzt/);
+  assert.equal(JSON.parse(toolOutputs.off_topic[0]).strikes, 1);
+
+  script.push(call('off_topic', { topic: 'Mathe-Hausaufgaben' }), say('Sorry, nur Mediaserver-Themen.'));
+  await ask('Was ist die Ableitung von x^2?');
+  const adminBefore = sent.filter((s) => s.to === ADMIN).length;
+  script.push(call('off_topic', { topic: 'Python-Code' }), say('Sorry, nur Mediaserver-Themen. Ich mache jetzt eine Pause.'));
+  await ask('Schreib mir ein Python-Skript');
+  assert.equal(JSON.parse(toolOutputs.off_topic.at(-1)!).paused, true);
+  assert.ok(sent.filter((s) => s.to === ADMIN).length > adminBefore);
+  assert.match(lastTo(ADMIN), /Themenfremdes \(3×/);
+
+  // paused: fixed notice once, no LLM call (the script is empty and would throw)
+  assert.equal(script.length, 0);
+  await ask('Und jetzt ein Gedicht?');
+  assert.match(lastTo(USER), /Pause/);
+  const quiet = sent.length;
+  await app.router.onIncoming({ waId: USER, text: 'Hallo??' });
+  await new Promise((r) => setTimeout(r, 100));
+  assert.equal(sent.length, quiet, 'only one notice while paused');
+  const user = app.repo.getUserByWaId(USER)!;
+  assert.match(app.repo.recentMessages(user.id, 1)[0].content, /Hallo\?\?/, 'message is still stored for the admin');
+
+  // admin lifts the pause
+  const { resetLimits } = await import('../src/agent/abuse.js');
+  resetLimits(app.ctx, user.id);
+  script.push(say('Wieder da! Was kann ich für dich tun?'));
+  await ask('Bist du wieder da?');
+  assert.match(lastTo(USER), /Wieder da/);
+});

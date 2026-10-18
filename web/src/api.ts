@@ -128,6 +128,8 @@ export interface BotRequest {
   title: string;
   notified_at: string | null;
   created_at: string;
+  /** null = asked the bot, 'web' = made on the Jellyseerr/Ombi website */
+  via: 'web' | null;
 }
 
 export interface ActionEntry {
@@ -176,6 +178,12 @@ export interface Overview {
   activity: ActionEntry[];
 }
 
+export interface LimitCount {
+  used: number;
+  /** 0 = no limit */
+  limit: number;
+}
+
 export interface UserDetail {
   user: User;
   label: string;
@@ -185,6 +193,12 @@ export interface UserDetail {
   requests: BotRequest[];
   usage: { month: UsageTotals; total: UsageTotals; byDay: UsageDay[] };
   stats: { messages: number; unsummarized: number; requestsToday: number };
+  limits: {
+    offTopic: LimitCount;
+    messages: LimitCount;
+    tokens: LimitCount;
+    blocked: 'off_topic' | 'messages' | 'tokens' | null;
+  };
   isAdminNumber: boolean;
 }
 

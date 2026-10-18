@@ -37,7 +37,7 @@ export interface SeerrRequest {
   type: 'movie' | 'tv';
   createdAt: string;
   updatedAt: string;
-  media: { id: number; tmdbId: number; tvdbId?: number; status: number; mediaType: 'movie' | 'tv' };
+  media: { id: number; tmdbId: number; tvdbId?: number; status: number; mediaType: 'movie' | 'tv'; updatedAt?: string; mediaAddedAt?: string };
   requestedBy: { id: number; displayName?: string; username?: string; jellyfinUsername?: string; plexUsername?: string };
   seasons?: { seasonNumber: number; status: number }[];
 }
@@ -123,6 +123,17 @@ export class SeerrClient {
   async recentRequests(filter: 'all' | 'available' | 'processing' | 'pending' = 'all', take = 100) {
     const res = await this.api.get<{ results: SeerrRequest[] }>('/request', { take, skip: 0, filter, sort: 'modified' });
     return res.results;
+  }
+
+  /** All requests, newest first. Used to import requests made on the website. */
+  async allRequests(maxPages = 20, take = 100) {
+    const out: SeerrRequest[] = [];
+    for (let page = 0; page < maxPages; page++) {
+      const res = await this.api.get<{ results: SeerrRequest[] }>('/request', { take, skip: page * take, filter: 'all', sort: 'added' });
+      out.push(...res.results);
+      if (res.results.length < take) break;
+    }
+    return out;
   }
 
   async users() {

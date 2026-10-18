@@ -69,6 +69,10 @@ const schema = z.object({
   RADARR_API_KEY: optStr,
 
   REQUESTS_PER_DAY: int(10),
+  MESSAGES_PER_DAY: int(60),
+  TOKENS_PER_DAY: int(500000),
+  MAX_MESSAGE_CHARS: int(1500),
+  OFF_TOPIC_LIMIT: int(3),
   AUTOFIX_REPLACE_FILE: bool(true),
   AUTOFIX_MAX_REPLACEMENTS_PER_DAY: int(3),
   ADMIN_NOTIFY_AUTOFIX: bool(true),
@@ -130,7 +134,7 @@ export function buildConfig(source: Record<string, string | undefined>): { ok: t
   if (c.llm.provider === 'custom' && !c.llm.baseUrl) {
     return { ok: false, error: 'LLM_PROVIDER=custom braucht LLM_BASE_URL (OpenAI-kompatibler Endpoint, z.B. http://ollama:11434/v1)' };
   }
-  for (const k of ['DEBOUNCE_MS', 'HISTORY_LIMIT', 'SUMMARIZE_AFTER', 'MAX_TOOL_ROUNDS', 'REQUESTS_PER_DAY', 'NOTIFY_POLL_MINUTES', 'AUTOFIX_MAX_REPLACEMENTS_PER_DAY'] as const) {
+  for (const k of ['DEBOUNCE_MS', 'HISTORY_LIMIT', 'SUMMARIZE_AFTER', 'MAX_TOOL_ROUNDS', 'REQUESTS_PER_DAY', 'MESSAGES_PER_DAY', 'TOKENS_PER_DAY', 'MAX_MESSAGE_CHARS', 'OFF_TOPIC_LIMIT', 'NOTIFY_POLL_MINUTES', 'AUTOFIX_MAX_REPLACEMENTS_PER_DAY'] as const) {
     if (!Number.isFinite(c[k]) || c[k] < 0) return { ok: false, error: `${k} muss eine Zahl ≥ 0 sein` };
   }
   return { ok: true, config: c };

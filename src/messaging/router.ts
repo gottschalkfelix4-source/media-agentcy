@@ -1,3 +1,4 @@
+import { blockedBy, capLength, handleBlocked } from '../agent/abuse.js';
 import type { Agent } from '../agent/agent.js';
 import { notifyAdmins, userLabel, type AppContext } from '../agent/context.js';
 import type { User } from '../db/repo.js';
@@ -197,7 +198,9 @@ export class Router {
     this.enqueue(userId, async () => {
       const user = this.ctx.repo.getUser(userId);
       if (!user || user.status !== 'active') return;
-      const reply = await this.agent.handleMessage(user, text, images.length ? images : undefined);
+      const blocked = blockedBy(this.ctx, user);
+      if (blocked) return handleBlocked(this.ctx, user, text, blocked, (t) => this.send(user, t));
+      const reply = await this.agent.handleMessage(user, capLength(this.ctx, user, text), images.length ? images : undefined);
       await this.send(user, reply);
     });
   }

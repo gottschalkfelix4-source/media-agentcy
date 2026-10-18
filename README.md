@@ -25,6 +25,8 @@
 | 🎬 **Medienwünsche** | „Kannst du Dune 2 besorgen?“ → Suche über Jellyseerr/Overseerr oder Ombi, Anfrage im Namen des Nutzers, Tageslimit pro Nutzer |
 | 🔍 **Anfragen nachverfolgen** | „Was ist mit meiner Anfrage?“ → der Bot prüft Jellyseerr, Radarr/Sonarr und die Mediathek, erklärt in einfachen Worten, wo es hängt, und hilft gleich: neu suchen, Mediathek neu einlesen, Anfrage wiederholen oder den Admin erinnern (mit Sperrfrist gegen Dauerschleifen) |
 | 🔔 **Benachrichtigungen** | Sobald eine Anfrage verfügbar ist, bekommt der Nutzer eine persönliche WhatsApp, auch für Anfragen von der Jellyseerr-Webseite. Die Nachricht sagt nur „jetzt verfügbar“, ohne Jellyfin und Plex zu unterscheiden |
+| 🌐 **Webseiten-Anfragen zuordnen** | Anfragen von der Jellyseerr-/Ombi-Webseite landen automatisch beim richtigen Nutzer (über Jellyseerr-ID, Jellyfin-, Plex- oder Ombi-Name) und erscheinen unter *Anfragen*. Schon Fertiges wird still abgelegt, Wartendes gemeldet, sobald es da ist |
+| 🛡️ **Missbrauchsschutz** | Der Bot bleibt beim Thema Mediaserver. Hausaufgaben, Texte, Code und Co. lehnt er ab, nach 3 Versuchen pausiert er für die Person bis zu 24 h und sagt dir Bescheid. Dazu Tageslimits für Nachrichten und Tokens und eine Längenbegrenzung für eingefügte Texte |
 | 🛠️ **Problemmeldungen** | Ticket → Diagnose über Radarr/Sonarr/Jellyfin/Plex → kleine Fehler selbst beheben (Datei ersetzen, fehlende Folgen suchen, Rescan, Metadaten) → Nutzer informieren, wenn die neue Datei da ist |
 | 🚨 **Eskalation** | Größere Probleme gehen per WhatsApp an dich. Du sprichst im selben Chat mit dem Agenten, er richtet den Nutzern deine Antworten aus |
 | 🧠 **Gedächtnis pro Nutzer** | Fakten (Geräte, Vorlieben …), laufende Zusammenfassung früherer Gespräche, Ticket- und Anfrageverlauf |
@@ -188,7 +190,9 @@ docker compose up -d --build
 - **Nutzer importieren**: Konten aus Jellyfin, Plex und Jellyseerr übernehmen, pro Person zusammengeführt, WhatsApp-Nummer eintragen. Bestehende Nutzer werden erkannt und nur verknüpft
 - **Nutzer-Detail**: Chatverlauf wie in WhatsApp, Gedächtnis (Zusammenfassung und Fakten bearbeiten), verknüpfte Konten, Tickets, Anfragen, Token-Verbrauch, laufende Wiedergabe
 - **Übernehmen**: Den Bot eines Nutzers pausieren und selbst schreiben (geht wörtlich vom Bot-Konto raus), oder den Bot deine Nachricht formulieren lassen. Eingehende Nachrichten werden weiter gespeichert, aber nicht beantwortet
-- **Tickets & Anfragen**: Status, Dringlichkeit, Lösung setzen und den Nutzer optional per WhatsApp informieren
+- **Tickets**: Status, Dringlichkeit, Lösung setzen und den Nutzer optional per WhatsApp informieren
+- **Anfragen**: alles, was über den Bot oder auf der Jellyseerr-/Ombi-Webseite angefragt wurde, mit Nutzer und Status. Webseiten-Anfragen werden bei jeder Prüfung (alle 5 min) automatisch übernommen, *Jetzt abgleichen* holt sie sofort
+- **Missbrauchsschutz**: Beim Nutzer unter *Nutzung* siehst du die Zähler der letzten 24 h. Ist der Bot für jemanden pausiert, steht das im Chat, und *Limits aufheben* gibt ihn wieder frei
 - **Admin-Agent**: derselbe Admin-Chat wie per WhatsApp, plus Rundnachricht an alle
 - **WhatsApp**: QR-Code scannen, neu verbinden, abmelden
 - **Aktivität & Logs**: Aktionsprotokoll des Bots und Live-Logs
@@ -207,6 +211,7 @@ Ein in der Oberfläche gesetzter Wert hat Vorrang vor Umgebungsvariablen. „Zur
 - „Wie gesund ist das System?“
 - „Was weißt du über Lisa?“ / „Merk dir bei Lisa: nutzt einen Fire TV Stick“
 - „Schick allen: Heute 22 Uhr Wartung, ca. 30 min“
+- „Limits von Max zurücksetzen“
 
 Befehle ohne KI: `/hilfe`, `/reset` (Verlauf leeren), `/status` (Admin: Dienste prüfen).
 
@@ -229,6 +234,7 @@ Der **Admin-Agent** (deine Nummer) kann zusätzlich Nutzer freischalten, sperren
 ## Sicherheit und Grenzen
 
 - Nutzer-Agent und Admin-Agent sind getrennt. Was ein Agent darf, hängt an der Absendernummer, nicht am Text der Nachricht. Prompt-Injection von Nutzern bekommt deshalb keinen Zugriff auf Admin-Tools.
+- **Missbrauchsschutz** (Einstellungen → *Missbrauchsschutz*, gilt nicht für Admins, 0 = aus): themenfremde Anfragen bis zur Pause (`OFF_TOPIC_LIMIT`, Standard 3), Nachrichten pro Tag (`MESSAGES_PER_DAY`, 60), Tokens pro Tag (`TOKENS_PER_DAY`, 500.000) und Zeichen pro Nachricht (`MAX_MESSAGE_CHARS`, 1500). Während einer Pause kostet der Bot nichts: Nachrichten werden nur gespeichert, die Person bekommt einmal einen festen Hinweis.
 - `replace_file` löscht die aktuelle Datei, bevor neu gesucht wird. Das ist abschaltbar (`AUTOFIX_REPLACE_FILE=false`), läuft höchstens einmal pro Ticket und unterliegt einem Tageslimit. Findet sich nach 72 h nichts, geht es automatisch an dich.
 - Baileys ist eine **inoffizielle** WhatsApp-Bibliothek. Der Bot verschickt nur Antworten und Benachrichtigungen, mit Abstand zwischen den Nachrichten. Für Massen-Broadcasts ist er nicht gedacht.
 - Der **ChatGPT-Login** nutzt die interne Codex-Schnittstelle von OpenAI. Sie ist nicht offiziell und kann sich jederzeit ändern.

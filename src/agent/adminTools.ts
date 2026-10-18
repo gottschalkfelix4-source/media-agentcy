@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { User } from '../db/repo.js';
 import { pingAll } from '../integrations/index.js';
+import { limitStatus, resetLimits } from './abuse.js';
 import { userLabel } from './context.js';
 import { checkRequest, requestFix } from './requestTools.js';
 import { defineTool, ToolError, type Tool, type ToolContext } from './tool.js';
@@ -61,7 +62,19 @@ const userDetails = defineTool({
       tickets: ctx.repo.listTickets({ userId: u.id, limit: 5 }).map((t) => ({ id: t.id, title: t.title, status: t.status })),
       requests: ctx.repo.botRequestsForUser(u.id, 5).map((r) => ({ title: r.title, at: r.created_at, available: !!r.notified_at })),
       recentMessages: ctx.repo.recentMessages(u.id, 10).map((m) => `${m.role}: ${m.content.slice(0, 200)}`),
+      limits24h: limitStatus(ctx, u.id),
     };
+  },
+});
+
+const resetUserLimits = defineTool({
+  name: 'reset_user_limits',
+  description: 'Hebt die Missbrauchs-Pause eines Nutzers auf (themenfremde Anfragen, Nachrichten- und Token-Tageslimit). Der Zähler beginnt neu.',
+  schema: z.object({ user: userRef }),
+  async run({ user }, ctx) {
+    const u = resolveUser(ctx, user);
+    resetLimits(ctx, u.id);
+    return { ok: true, user: userLabel(u), limits: limitStatus(ctx, u.id) };
   },
 });
 
@@ -332,6 +345,7 @@ export const adminTools: Tool[] = [
   listUsers,
   userDetails,
   setUserStatus,
+  resetUserLimits,
   linkUser,
   listMediaAccounts,
   listTickets,

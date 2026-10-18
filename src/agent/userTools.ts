@@ -3,6 +3,7 @@ import { pingAll } from '../integrations/index.js';
 import { MEDIA_STATUS, REQUEST_STATUS } from '../integrations/seerr.js';
 import { titleScore } from '../integrations/http.js';
 import { notifyAdmins, userLabel } from './context.js';
+import { offTopic } from './abuse.js';
 import { checkRequest, requestFix } from './requestTools.js';
 import { defineTool, ToolError, type Tool, type ToolContext } from './tool.js';
 
@@ -500,4 +501,5 @@ export const userTools: Tool[] = [
   rememberFact,
   forgetFact,
   serviceStatus,
+  offTopic,
 ] as unknown as Tool[];

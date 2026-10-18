@@ -29,6 +29,7 @@ export interface SettingGroup {
 export const GROUPS: SettingGroup[] = [
   { id: 'general', label: 'Allgemein', description: 'Wie sich der Bot nennt und wen er als Admin kennt.' },
   { id: 'access', label: 'Zugang', description: 'Wer mit dem Bot schreiben darf.' },
+  { id: 'abuse', label: 'Missbrauchsschutz', description: 'Damit niemand den Bot als kostenlose KI für alles Mögliche nutzt. Gilt nicht für Admins. 0 = kein Limit.' },
   { id: 'llm', label: 'KI-Anbieter', description: 'Modell und Anbieter, mit denen der Bot denkt.', test: 'llm' },
   { id: 'prompt', label: 'Persönlichkeit', description: 'Zusätzliche Anweisungen, die der Bot in jedem Nutzer-Gespräch befolgt.' },
   { id: 'jellyfin', label: 'Jellyfin', test: 'jellyfin' },
@@ -76,6 +77,18 @@ export const SETTINGS: SettingDef[] = [
     ],
   },
   { key: 'REQUESTS_PER_DAY', group: 'access', label: 'Medienanfragen pro Nutzer und Tag', type: 'int', default: '10' },
+
+  {
+    key: 'OFF_TOPIC_LIMIT',
+    group: 'abuse',
+    label: 'Themenfremde Anfragen bis zur Pause',
+    type: 'int',
+    default: '3',
+    help: 'Hausaufgaben, Texte, Code usw. lehnt der Bot immer ab. Nach so vielen Versuchen in 24 h antwortet er der Person bis zu 24 h nicht mehr und sagt dir Bescheid.',
+  },
+  { key: 'MESSAGES_PER_DAY', group: 'abuse', label: 'Nachrichten pro Nutzer und Tag', type: 'int', default: '60', help: 'Kurz hintereinander geschickte Nachrichten zählen als eine.' },
+  { key: 'TOKENS_PER_DAY', group: 'abuse', label: 'Tokens pro Nutzer und Tag', type: 'int', default: '500000', help: 'Deckelt die KI-Kosten pro Person. Eine normale Frage braucht etwa 10.000–30.000 Tokens.' },
+  { key: 'MAX_MESSAGE_CHARS', group: 'abuse', label: 'Max. Zeichen pro Nachricht', type: 'int', default: '1500', help: 'Längere Nachrichten (eingefügte Texte, Code) werden gekürzt, bevor sie an die KI gehen.' },
 
   { key: 'LLM_PROVIDER', group: 'llm', label: 'Anbieter', type: 'select', options: PROVIDERS, default: 'openrouter' },
   { key: 'LLM_BASE_URL', group: 'llm', label: 'Endpoint-URL', type: 'url', placeholder: 'http://ollama:11434/v1', help: 'Nur für „Eigener Endpoint“ nötig. Leer = Standard des Anbieters.' },

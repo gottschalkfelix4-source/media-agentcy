@@ -2,6 +2,7 @@ import { notifyAdmins, userLabel, type AppContext } from '../agent/context.js';
 import type { BotRequest, Watch } from '../db/repo.js';
 import { normalizeTitle } from '../integrations/http.js';
 import type { SeerrRequest } from '../integrations/seerr.js';
+import { syncRequests } from './requestSync.js';
 
 const WATCH_TIMEOUT_HOURS = 72;
 const AVAILABLE = 5;
@@ -45,6 +46,7 @@ export class Poller {
     this.running = true;
     try {
       const results = [
+        await this.step('request-sync', () => this.syncRequests()),
         await this.step('bot-requests', () => this.checkBotRequests()),
         await this.step('seerr', () => this.checkSeerr()),
         await this.step('ombi', () => this.checkOmbi()),
@@ -95,6 +97,27 @@ export class Poller {
   }
 
   /** Requests made through the bot. */
+  /**
+   * Website requests → bot_requests (before the checks, so already finished requests of newly linked users are
+   * stored as done instead of being announced). A full pass hourly and whenever account links changed,
+   * otherwise only the newest 100.
+   */
+  private async syncRequests() {
+    const { repo } = this.ctx;
+    const lastFull = repo.getKv('requests_full_sync');
+    const links = repo
+      .listUsers('active')
+      .map((u) => [u.id, u.seerr_user_id, u.ombi_username, u.jellyfin_username, u.plex_username].join('|'))
+      .join(',');
+    const full = !lastFull || Date.now() - Date.parse(lastFull) > 3_600_000 || repo.getKv('requests_sync_links') !== links;
+    const res = await syncRequests(this.ctx, { full });
+    if (full && !res.errors.length) {
+      repo.setKv('requests_full_sync', new Date().toISOString());
+      repo.setKv('requests_sync_links', links);
+    }
+    if (res.errors.length) throw new Error(res.errors.join('; '));
+  }
+
   private async checkBotRequests() {
     const { seerr, ombi } = this.ctx.services;
     const pending = this.ctx.repo.pendingBotRequests();

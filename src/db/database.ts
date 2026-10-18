@@ -135,6 +135,10 @@ const MIGRATIONS: string[] = [
     user_agent TEXT
   );
   `,
+  `
+  ALTER TABLE bot_requests ADD COLUMN via TEXT;  -- NULL = asked the bot, 'web' = imported from the Jellyseerr/Ombi website
+  CREATE INDEX idx_bot_requests_user ON bot_requests(user_id, source, external_id);
+  `,
 ];
 
 export function openDatabase(file: string): DatabaseSync {

@@ -1,0 +1,83 @@
+/**
+ * Website requests (Jellyseerr/Ombi) are assigned to bot users via their linked accounts.
+ * Run: npm test
+ */
+import assert from 'node:assert/strict';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { before, test } from 'node:test';
+
+let app: ReturnType<typeof import('../src/app.js')['createApp']>;
+let syncRequests: typeof import('../src/notifier/requestSync.js')['syncRequests'];
+
+const old = '2026-01-10T12:00:00.000Z';
+const req = (id: number, by: object, tmdbId: number, mediaStatus: number, status = 2, mediaAddedAt = old) => ({
+  id,
+  status,
+  type: 'movie',
+  createdAt: old,
+  updatedAt: old,
+  media: { id, tmdbId, status: mediaStatus, mediaType: 'movie', mediaAddedAt },
+  requestedBy: by,
+});
+const seerrRequests: ReturnType<typeof req>[] = [];
+
+before(async () => {
+  Object.assign(process.env, { DATA_DIR: mkdtempSync(path.join(tmpdir(), 'mag-sync-')), LOG_LEVEL: 'silent', LLM_PROVIDER: 'custom', LLM_BASE_URL: 'http://unused' });
+  const { createApp } = await import('../src/app.js');
+  ({ syncRequests } = await import('../src/notifier/requestSync.js'));
+  app = createApp({ async sendText() {} });
+  app.ctx.services.seerr = {
+    allRequests: async () => seerrRequests,
+    title: async (_: string, tmdbId: number) => `Film ${tmdbId}`,
+  } as never;
+  app.ctx.services.ombi = {
+    movieRequests: async () => [{ id: 7, title: 'Ombi-Film', theMovieDbId: 300, available: false, approved: true, requestedDate: old, requestedUser: { userName: 'LENA' } }],
+    tvRequests: async () => [],
+  } as never;
+});
+
+test('requests are assigned via Seerr id or media server name, finished ones are stored as done', async () => {
+  const lena = app.repo.createUser('4915100000020', { status: 'active', display_name: 'Lena' });
+  app.repo.updateUser(lena.id, { seerr_user_id: 4, jellyfin_username: 'lena' });
+  const ole = app.repo.createUser('4915100000021', { status: 'active', display_name: 'Ole' });
+  app.repo.updateUser(ole.id, { jellyfin_username: 'ole' });
+  app.repo.addBotRequest({ user_id: lena.id, source: 'seerr', external_id: '50', tmdb_id: 100, media_type: 'movie', title: 'Schon über den Bot' });
+
+  seerrRequests.push(
+    req(1, { id: 4 }, 101, 5), // Lena, available long ago
+    req(2, { id: 8, jellyfinUsername: 'Ole' }, 102, 3), // Ole via Jellyfin name, downloading
+    req(3, { id: 4 }, 103, 2, 3), // declined → skipped
+    req(4, { id: 99 }, 104, 3), // nobody linked
+    req(5, { id: 4 }, 100, 3), // same title Lena already asked the bot for → no duplicate
+  );
+
+  const r = await syncRequests(app.ctx, { full: true });
+  assert.deepEqual(r, { imported: 3, unmatched: 1, errors: [] });
+
+  const lenas = app.repo.botRequestsForUser(lena.id);
+  const done = lenas.find((b) => b.external_id === '1')!;
+  assert.equal(done.via, 'web');
+  assert.equal(done.title, 'Film 101');
+  assert.ok(done.notified_at, 'available → done');
+  assert.equal(done.created_at, '2026-01-10 12:00:00');
+  assert.ok(app.repo.wasNotified('seerr', '1', lena.id), 'the poller must not announce it');
+  assert.equal(lenas.filter((b) => b.tmdb_id === 100).length, 1);
+  assert.ok(lenas.some((b) => b.source === 'ombi' && b.external_id === 'movie:7' && !b.notified_at), 'Ombi name matched case-insensitively');
+
+  const [oles] = app.repo.botRequestsForUser(ole.id);
+  assert.equal(oles.external_id, '2');
+  assert.equal(oles.notified_at, null, 'still waiting → poller notifies later');
+
+  assert.equal((await syncRequests(app.ctx, { full: true })).imported, 0, 'idempotent');
+});
+
+test('a request that finished just now is imported as waiting so the user still gets the message', async () => {
+  const lena = app.repo.getUserByWaId('4915100000020')!;
+  seerrRequests.push(req(6, { id: 4 }, 106, 5, 2, new Date().toISOString()));
+  assert.equal((await syncRequests(app.ctx)).imported, 1);
+  const r = app.repo.botRequestsForUser(lena.id).find((b) => b.external_id === '6')!;
+  assert.equal(r.notified_at, null);
+  assert.ok(app.repo.pendingBotRequests().some((b) => b.id === r.id));
+});

@@ -71,6 +71,8 @@ export interface BotRequest {
   title: string;
   notified_at: string | null;
   created_at: string;
+  /** NULL = asked the bot, 'web' = imported from the Jellyseerr/Ombi website. */
+  via: 'web' | null;
 }
 
 export interface Watch {
@@ -226,6 +228,15 @@ export class Repo {
     return this.get<{ c: number }>('SELECT COUNT(*) AS c FROM messages WHERE user_id = ?', userId)!.c;
   }
 
+  countMessagesSince(userId: number, role: string, sinceSql: string) {
+    return this.get<{ c: number }>(
+      `SELECT COUNT(*) AS c FROM messages WHERE user_id = ? AND role = ? AND via IS NULL AND created_at >= datetime('now', ?)`,
+      userId,
+      role,
+      sinceSql,
+    )!.c;
+  }
+
   unsummarizedCount(userId: number) {
     return this.get<{ c: number }>('SELECT COUNT(*) AS c FROM messages WHERE user_id = ? AND summarized = 0', userId)!.c;
   }
@@ -316,17 +327,32 @@ export class Repo {
 
   // ---------- requests / notifications ----------
 
-  addBotRequest(r: Omit<BotRequest, 'id' | 'notified_at' | 'created_at'>) {
+  addBotRequest(r: Omit<BotRequest, 'id' | 'notified_at' | 'created_at' | 'via'> & Partial<Pick<BotRequest, 'notified_at' | 'created_at' | 'via'>>) {
     this.run(
-      'INSERT INTO bot_requests (user_id, source, external_id, tmdb_id, media_type, title) VALUES (?, ?, ?, ?, ?, ?)',
+      "INSERT INTO bot_requests (user_id, source, external_id, tmdb_id, media_type, title, via, notified_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')))",
       r.user_id,
       r.source,
       r.external_id,
       r.tmdb_id,
       r.media_type,
       r.title,
+      r.via ?? null,
+      r.notified_at ?? null,
+      r.created_at ?? null,
     );
     bus.emitEvent({ type: 'request', userId: r.user_id });
+  }
+
+  /** Same request already tracked for this user (by request id, or by title id when the id differs, e.g. a bot request re-imported). */
+  hasBotRequest(userId: number, source: string, externalId: string, tmdbId: number | null, mediaType: string) {
+    return !!this.get(
+      'SELECT 1 FROM bot_requests WHERE user_id = ? AND ((source = ? AND external_id = ?) OR (tmdb_id IS NOT NULL AND tmdb_id = ? AND media_type = ?))',
+      userId,
+      source,
+      externalId,
+      tmdbId,
+      mediaType,
+    );
   }
 
   pendingBotRequests() {

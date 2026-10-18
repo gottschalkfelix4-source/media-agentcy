@@ -4,6 +4,7 @@ import { streamSSE } from 'hono/streaming';
 import QRCode from 'qrcode';
 import { z } from 'zod';
 import type { App } from '../app.js';
+import { blockedBy, limitStatus, resetLimits } from '../agent/abuse.js';
 import { userLabel } from '../agent/context.js';
 import type { Config } from '../config.js';
 import type { TicketStatus, User, UserPatch } from '../db/repo.js';
@@ -14,6 +15,7 @@ import { recentLogs } from '../logger.js';
 import { GROUPS } from '../settings/registry.js';
 import type { WhatsAppClient } from '../whatsapp/client.js';
 import { SESSION_COOKIE, type WebAuth } from './auth.js';
+import { syncRequests } from '../notifier/requestSync.js';
 import { mergeAccounts, normalizePhone, type MediaAccountLists } from './userImport.js';
 
 export interface ApiDeps {
@@ -321,6 +323,7 @@ export function createApi(deps: ApiDeps) {
         unsummarized: repo.unsummarizedCount(u.id),
         requestsToday: repo.countActionsSince(u.id, 'request_media', '-1 day'),
       },
+      limits: { ...limitStatus(ctx, u.id), blocked: blockedBy(ctx, u) ?? null },
       isAdminNumber: ctx.config.ADMIN_NUMBERS.includes(u.wa_id),
     });
   });
@@ -403,6 +406,12 @@ export function createApi(deps: ApiDeps) {
     const u = getUserOr404(idParam(c));
     repo.clearHistory(u.id);
     repo.logAction(u.id, null, 'web_reset_history', {});
+    return c.json({ ok: true });
+  });
+
+  api.post('/users/:id/reset-limits', (c) => {
+    const u = getUserOr404(idParam(c));
+    resetLimits(ctx, u.id);
     return c.json({ ok: true });
   });
 
@@ -606,6 +615,11 @@ export function createApi(deps: ApiDeps) {
   });
 
   // ---------------------------------------------------------------- requests / activity / logs / usage
+
+  api.post('/requests/sync', async (c) => {
+    if (!ctx.services.seerr && !ctx.services.ombi) throw new HttpError(400, 'Weder Jellyseerr noch Ombi ist eingerichtet.');
+    return c.json(await syncRequests(ctx, { full: true }));
+  });
 
   api.get('/requests', (c) => c.json(repo.listBotRequests({ userId: Number(c.req.query('userId')) || undefined, limit: 300 })));
 

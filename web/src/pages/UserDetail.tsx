@@ -78,6 +78,23 @@ function usePatchUser(id: number) {
   });
 }
 
+function useResetLimits(id: number) {
+  return useMutation({
+    mutationFn: () => api(`/users/${id}/reset-limits`, { body: {} }),
+    onSuccess: () => {
+      toast('Limits zurückgesetzt, der Bot antwortet wieder');
+      invalidateUser(id);
+    },
+    onError: toastError,
+  });
+}
+
+const LIMIT_REASON = {
+  off_topic: 'wiederholt themenfremde Anfragen',
+  messages: 'Nachrichten-Tageslimit erreicht',
+  tokens: 'Token-Tageslimit erreicht',
+} as const;
+
 // ---------------------------------------------------------------- chat
 
 function ChatTab({ d }: { d: UserDetail }) {
@@ -132,6 +149,7 @@ function ChatTab({ d }: { d: UserDetail }) {
     }
   };
 
+  const resetLimits = useResetLimits(id);
   const paused = !!d.user.bot_paused;
   const rt = d.runtime;
   const typing = rt.state === 'working' ? 'Bot schreibt …' : rt.state === 'collecting' ? 'Bot wartet auf weitere Nachrichten …' : undefined;
@@ -154,6 +172,18 @@ function ChatTab({ d }: { d: UserDetail }) {
           {paused ? 'An Bot zurückgeben' : 'Übernehmen'}
         </Button>
       </div>
+
+      {d.limits.blocked && (
+        <div className="flex flex-wrap items-center gap-3 border-b border-danger/30 bg-danger-soft px-4 py-2 text-[13px]">
+          <Ban className="size-4 text-danger" />
+          <span className="min-w-0 flex-1 text-danger">
+            <strong>Bot pausiert</strong> ({LIMIT_REASON[d.limits.blocked]}). Neue Nachrichten werden nur gespeichert, bis zu 24 h lang.
+          </span>
+          <Button size="sm" variant="secondary" loading={resetLimits.isPending} icon={<RotateCcw className="size-3.5" />} onClick={() => resetLimits.mutate()}>
+            Limits aufheben
+          </Button>
+        </div>
+      )}
 
       <ChatTranscript
         className="flex-1"
@@ -446,6 +476,46 @@ function RequestsTab({ d }: { d: UserDetail }) {
   );
 }
 
+function LimitsCard({ d }: { d: UserDetail }) {
+  const reset = useResetLimits(d.user.id);
+  const l = d.limits;
+  const rows: [string, { used: number; limit: number }, (n: number) => string][] = [
+    ['Themenfremde Anfragen', l.offTopic, fmtNum],
+    ['Nachrichten', l.messages, fmtNum],
+    ['Tokens', l.tokens, fmtTokens],
+  ];
+  return (
+    <Card
+      title="Missbrauchsschutz (letzte 24 h)"
+      actions={
+        <Button size="sm" variant="secondary" loading={reset.isPending} icon={<RotateCcw className="size-3.5" />} onClick={() => reset.mutate()}>
+          Zähler zurücksetzen
+        </Button>
+      }
+    >
+      {d.user.role === 'admin' && <p className="mb-3 text-xs text-fg-3">Für Admins gelten keine Limits.</p>}
+      <div className="space-y-3">
+        {rows.map(([label, x, fmt]) => {
+          const pct = x.limit > 0 ? Math.min(100, (x.used / x.limit) * 100) : 0;
+          return (
+            <div key={label}>
+              <div className="mb-1 flex justify-between text-[13px]">
+                <span>{label}</span>
+                <span className="text-fg-3">
+                  {fmt(x.used)} / {x.limit > 0 ? fmt(x.limit) : 'unbegrenzt'}
+                </span>
+              </div>
+              <div className="h-1.5 overflow-hidden rounded-full bg-surface-2">
+                <div className={cx('h-full rounded-full', pct >= 100 ? 'bg-danger' : pct >= 75 ? 'bg-warn' : 'bg-accent')} style={{ width: `${pct}%` }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
 function UsageTab({ d }: { d: UserDetail }) {
   const m = d.usage.month;
   return (
@@ -456,6 +526,7 @@ function UsageTab({ d }: { d: UserDetail }) {
         <Stat label="Antwortzeit Ø" value={m.avg_ms ? fmtDuration(Math.round(m.avg_ms)) : '–'} />
         <Stat label="Tokens gesamt" value={fmtTokens(d.usage.total.input + d.usage.total.output)} hint={`${fmtNum(d.usage.total.calls)} Aufrufe`} />
       </div>
+      <LimitsCard d={d} />
       <Card title="Token-Verbrauch pro Tag">
         <BarChart
           days={30}

@@ -69,6 +69,7 @@ const schema = z.object({
   RADARR_API_KEY: optStr,
 
   REQUESTS_PER_DAY: int(10),
+  REQUEST_CONFIRM: bool(true),
   MESSAGES_PER_DAY: int(60),
   TOKENS_PER_DAY: int(500000),
   MAX_MESSAGE_CHARS: int(1500),

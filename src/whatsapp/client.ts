@@ -187,6 +187,16 @@ export class WhatsAppClient implements Messenger {
     await job;
   }
 
+  async sendImage(user: User, url: string, caption: string) {
+    const job = this.sendChain.then(async () => {
+      if (!this.sock || this.state !== 'open') throw new Error('WhatsApp nicht verbunden');
+      await this.sock.sendMessage(this.jidFor(user), { image: { url }, caption });
+      await new Promise((r) => setTimeout(r, SEND_GAP_MS));
+    });
+    this.sendChain = job.catch(() => undefined);
+    await job;
+  }
+
   async setTyping(user: User, typing: boolean) {
     if (!this.sock || this.state !== 'open') return;
     await this.sock.sendPresenceUpdate(typing ? 'composing' : 'paused', this.jidFor(user));

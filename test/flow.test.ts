@@ -39,7 +39,8 @@ const fake = createServer((req, res) => {
       });
     if (p === '/seerr/api/v1/request' && req.method === 'POST') return json({ id: 501, status: 2, media: { tmdbId: 438631 } });
     if (p === '/seerr/api/v1/request') return json({ results: [] });
-    if (p === '/seerr/api/v1/movie/438631') return json({ id: 438631, title: 'Dune', mediaInfo: { status: state.dune.status } });
+    if (p === '/seerr/api/v1/movie/438631')
+      return json({ id: 438631, title: 'Dune', releaseDate: '2021-09-15', posterPath: '/dune.jpg', overview: 'Wüstenplanet.', mediaInfo: { status: state.dune.status } });
 
     // Radarr
     const movie = () => ({
@@ -86,7 +87,7 @@ let callSeq = 0;
 const call = (name: string, args: unknown): Step => () => ({ content: null, toolCalls: [{ id: `c${++callSeq}`, name, arguments: JSON.stringify(args) }] });
 const say = (text: string): Step => () => ({ content: text, toolCalls: [] });
 
-const sent: { to: string; text: string }[] = [];
+const sent: { to: string; text: string; image?: string }[] = [];
 let app: Awaited<ReturnType<typeof import('../src/app.js')['createApp']>>;
 
 async function waitFor(pred: () => boolean, ms = 5000) {
@@ -122,6 +123,9 @@ before(async () => {
   app = createApp({
     async sendText(user, text) {
       sent.push({ to: user.wa_id, text });
+    },
+    async sendImage(user, url, caption) {
+      sent.push({ to: user.wa_id, text: caption, image: url });
     },
   });
   app.ctx.llm = {
@@ -167,18 +171,32 @@ test('admin approves the user via the agent, user gets a welcome', async () => {
   assert.match(lastTo(USER), /Willkommen/);
 });
 
-test('user requests a movie, gets notified when available', async () => {
+test('user requests a movie: cover first, request only after confirmation, notified when available', async () => {
   script.push(
     call('search_media', { query: 'Dune' }),
-    call('request_media', { tmdbId: 438631, mediaType: 'movie', title: 'Dune' }),
-    say('Dune ist angefragt!'),
+    call('confirm_media', { tmdbId: 438631, mediaType: 'movie' }),
+    call('request_media', { tmdbId: 438631, mediaType: 'movie', title: 'Dune' }), // too early, same turn
+    say('Ist das der richtige Film?'),
   );
   const before = sent.length;
   await app.router.onIncoming({ waId: USER, text: 'Kannst du Dune besorgen?' });
-  await waitFor(() => sent.length > before);
+  await waitFor(() => sent.length > before + 1);
+  const [cover, question] = sent.slice(before);
+  assert.equal(cover.image, 'https://image.tmdb.org/t/p/w500/dune.jpg');
+  assert.match(cover.text, /\*Dune\* \(Film\)\n📅 Erschienen am 15\.09\.2021/);
+  assert.match(question.text, /richtige/);
+  assert.match(toolOutputs.request_media[0], /noch nicht geantwortet/);
+  assert.ok(!calls.some((c) => c.method === 'POST' && c.path === '/seerr/api/v1/request'), 'nothing requested before the user confirmed');
+  const history = app.repo.recentMessages(app.repo.getUserByWaId(USER)!.id, 3).map((m) => m.content);
+  assert.match(history[1], /^🖼️ 🎬 \*Dune\*/, 'cover stored between question and answer');
+
+  script.push(call('request_media', { tmdbId: 438631, mediaType: 'movie', title: 'Dune' }), say('Dune ist angefragt!'));
+  const before1 = sent.length;
+  await app.router.onIncoming({ waId: USER, text: 'Ja genau' });
+  await waitFor(() => sent.length > before1);
   assert.match(lastTo(USER), /angefragt/);
   assert.ok(calls.some((c) => c.method === 'POST' && c.path === '/seerr/api/v1/request'));
-  assert.match(toolOutputs.request_media[0], /"ok":true/);
+  assert.match(toolOutputs.request_media.at(-1)!, /"ok":true/);
 
   state.dune.status = 5;
   script.push((msgs) => {

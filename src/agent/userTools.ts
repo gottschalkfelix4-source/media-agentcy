@@ -43,10 +43,69 @@ export const searchMedia = defineTool({
   },
 });
 
+const CONFIRM_TTL_MS = 2 * 3_600_000;
+const confirmKey = (userId: number) => `media_confirm:${userId}`;
+
+/** Titles whose cover the user was shown recently (key "movie:123", at = when it was sent). */
+function shownCards(ctx: ToolContext): { key: string; at: number }[] {
+  try {
+    const list = JSON.parse(ctx.repo.getKv(confirmKey(ctx.user.id)) ?? '[]') as { key: string; at: number }[];
+    return list.filter((c) => Date.now() - c.at < CONFIRM_TTL_MS);
+  } catch {
+    return [];
+  }
+}
+
+const germanDate = (iso: string) => iso.slice(0, 10).split('-').reverse().join('.');
+
+export const confirmMedia = defineTool({
+  name: 'confirm_media',
+  description:
+    'Schickt dem Nutzer Cover, Titel und Erscheinungsdatum eines Suchtreffers als Bild, damit er bestätigen kann, dass es der richtige Titel ist. Pflicht vor request_media. Bei mehreren möglichen Treffern höchstens 3 nacheinander zeigen.',
+  schema: z.object({ tmdbId: z.number().int(), mediaType }),
+  async run({ tmdbId, mediaType }, ctx) {
+    const { seerr, ombi } = ctx.services;
+    const source = seerr ?? ombi;
+    if (!source) throw new ToolError('Kein Anfragesystem (Jellyseerr/Ombi) konfiguriert.');
+    if (ctx.turn.sent.filter((s) => s.startsWith('🖼️')).length >= 3) throw new ToolError('Schon 3 Cover gezeigt. Frag jetzt, welcher Titel gemeint ist.');
+    const card = await source.card(mediaType, tmdbId);
+    if (card.status === 5) return { alreadyAvailable: true, title: card.title, note: 'Der Titel ist schon auf dem Server. Sag das, statt anzufragen.' };
+
+    const kind = mediaType === 'movie' ? 'Film' : card.seasons ? `Serie, ${card.seasons} ${card.seasons === 1 ? 'Staffel' : 'Staffeln'}` : 'Serie';
+    const released = card.date && card.date.slice(0, 10) <= new Date().toISOString().slice(0, 10);
+    const dateLine = card.date
+      ? `📅 ${released ? (mediaType === 'movie' ? 'Erschienen' : 'Erstausstrahlung') : 'Erscheint'} am ${germanDate(card.date)}`
+      : '📅 Erscheinungsdatum unbekannt';
+    const overview = card.overview ? `\n\n${card.overview.length > 220 ? `${card.overview.slice(0, 220).trimEnd()}…` : card.overview}` : '';
+    const caption = `${mediaType === 'movie' ? '🎬' : '📺'} *${card.title}* (${kind})\n${dateLine}${overview}`;
+
+    if (!ctx.turn.quiet) {
+      if (card.posterUrl && ctx.messenger.sendImage) {
+        await ctx.messenger.sendImage(ctx.user, card.posterUrl, caption).catch(async (err: unknown) => {
+          ctx.logger.warn({ err, tmdbId }, 'Cover konnte nicht gesendet werden, sende nur Text');
+          await ctx.messenger.sendText(ctx.user, caption);
+        });
+      } else {
+        await ctx.messenger.sendText(ctx.user, caption);
+      }
+    }
+    ctx.turn.sent.push(`🖼️ ${caption}`);
+    const key = `${mediaType}:${tmdbId}`;
+    ctx.repo.setKv(confirmKey(ctx.user.id), JSON.stringify([...shownCards(ctx).filter((c) => c.key !== key), { key, at: Date.now() }].slice(-5)));
+    return {
+      sent: true,
+      title: card.title,
+      date: card.date,
+      instruction:
+        'Cover, Titel und Datum sind beim Nutzer. Frag jetzt in einem kurzen Satz, ob das der richtige Titel ist (Titel und Datum nicht wiederholen). request_media erst, wenn er in seiner nächsten Nachricht zustimmt. Sagt er nein: nach weiteren Details fragen oder den nächsten Treffer zeigen.',
+    };
+  },
+});
+
 export const requestMedia = defineTool({
   name: 'request_media',
   description:
-    'Fragt einen Film/eine Serie im Namen des Nutzers an (Jellyseerr bevorzugt, sonst Ombi). Nur nach search_media und wenn klar ist, welcher Titel gemeint ist. Der Nutzer wird automatisch benachrichtigt, sobald der Titel verfügbar ist.',
+    'Fragt einen Film/eine Serie im Namen des Nutzers an (Jellyseerr bevorzugt, sonst Ombi). Nur nach search_media und nachdem der Nutzer den Titel per confirm_media gesehen und bestätigt hat. Der Nutzer wird automatisch benachrichtigt, sobald der Titel verfügbar ist.',
   schema: z.object({
     tmdbId: z.number().int(),
     mediaType,
@@ -61,11 +120,21 @@ export const requestMedia = defineTool({
         throw new ToolError(`Tageslimit von ${ctx.config.REQUESTS_PER_DAY} Anfragen erreicht. Morgen geht wieder was – oder der Admin hilft.`);
       }
     }
+    const key = `${mediaType}:${tmdbId}`;
+    if (ctx.config.REQUEST_CONFIRM) {
+      const shown = shownCards(ctx).find((c) => c.key === key);
+      if (!shown) throw new ToolError('Erst confirm_media aufrufen: Der Nutzer muss Cover, Titel und Datum sehen und bestätigen, bevor angefragt wird.');
+      if (shown.at >= ctx.turn.startedAt) {
+        throw new ToolError('Der Nutzer hat das Cover gerade erst bekommen und noch nicht geantwortet. Frag, ob es der richtige Titel ist, und warte auf seine Antwort.');
+      }
+    }
+    const forget = () => ctx.repo.setKv(confirmKey(ctx.user.id), JSON.stringify(shownCards(ctx).filter((c) => c.key !== key)));
     if (seerr) {
       try {
         const req = await seerr.request({ mediaType, tmdbId, seasons: seasons?.length ? seasons : 'all', asUserId: ctx.user.seerr_user_id ?? undefined });
         ctx.repo.addBotRequest({ user_id: ctx.user.id, source: 'seerr', external_id: String(req.id), tmdb_id: tmdbId, media_type: mediaType, title });
         ctx.repo.logAction(ctx.user.id, null, 'request_media', { tmdbId, mediaType, title, requestId: req.id });
+        forget();
         return {
           ok: true,
           requestId: req.id,
@@ -89,6 +158,7 @@ export const requestMedia = defineTool({
         title,
       });
       ctx.repo.logAction(ctx.user.id, null, 'request_media', { tmdbId, mediaType, title, via: 'ombi' });
+      forget();
       return { ok: true, message: res?.message ?? 'Angefragt über Ombi.' };
     }
     throw new ToolError('Kein Anfragesystem (Jellyseerr/Ombi) konfiguriert.');
@@ -486,6 +556,7 @@ export const serviceStatus = defineTool({
 
 export const userTools: Tool[] = [
   searchMedia,
+  confirmMedia,
   requestMedia,
   myRequests,
   checkRequest,

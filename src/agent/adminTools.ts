@@ -13,6 +13,7 @@ import {
   forgetFact,
   playbackInfo,
   rememberFact,
+  confirmMedia,
   requestMedia,
   searchMedia,
 } from './userTools.js';
@@ -332,6 +333,7 @@ const serverActivity = defineTool({
 export const adminTools: Tool[] = [
   // shared media tools (run without per-user limits for admins)
   searchMedia,
+  confirmMedia,
   requestMedia,
   checkRequest,
   requestFix,

@@ -77,6 +77,14 @@ export const SETTINGS: SettingDef[] = [
     ],
   },
   { key: 'REQUESTS_PER_DAY', group: 'access', label: 'Medienanfragen pro Nutzer und Tag', type: 'int', default: '10' },
+  {
+    key: 'REQUEST_CONFIRM',
+    group: 'access',
+    label: 'Vor dem Anfragen Cover zeigen und bestätigen lassen',
+    type: 'bool',
+    default: 'true',
+    help: 'Der Bot schickt Cover, Titel und Erscheinungsdatum und fragt erst nach einem Ja an. Verhindert Anfragen für den falschen Titel.',
+  },
 
   {
     key: 'OFF_TOPIC_LIMIT',

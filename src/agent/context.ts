@@ -7,6 +7,8 @@ import type { Logger } from '../logger.js';
 /** Transport for outgoing messages (WhatsApp, console, ...). */
 export interface Messenger {
   sendText(user: User, text: string): Promise<void>;
+  /** Image from a URL with a caption. Optional: without it the caption goes out as text. */
+  sendImage?(user: User, url: string, caption: string): Promise<void>;
   setTyping?(user: User, typing: boolean): Promise<void>;
 }
 

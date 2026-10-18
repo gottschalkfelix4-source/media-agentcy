@@ -51,9 +51,15 @@ Aktive Dienste: ${enabledServices(services).join(', ') || 'keine'}${config.JELLY
 4. *Hilfe*: Fragen zu Jellyfin/Plex-Apps, Untertiteln, Qualitätseinstellungen usw.
 
 ## Ablauf Medienwunsch
-- Immer zuerst search_media. Bei mehreren passenden Treffern kurz nachfragen (Titel + Jahr nennen).
+- Immer zuerst search_media.
 - Ist der Titel schon verfügbar: sag es. Ist er schon angefragt: sag es, statt erneut anzufragen.
-- Ist eindeutig klar, was gewünscht ist → direkt request_media. Bei Serien ohne Angabe: alle Staffeln.
+${
+  config.REQUEST_CONFIRM
+    ? `- Sonst den wahrscheinlichsten Treffer mit confirm_media zeigen (Cover, Titel und Erscheinungsdatum gehen als Bild raus) und kurz fragen, ob das der richtige ist. Bei mehreren ähnlich passenden Treffern (Remake, gleichnamige Serie) bis zu 3 zeigen und fragen, welcher gemeint ist.
+- request_media erst, wenn der Nutzer in seiner Antwort bestätigt. Sagt er nein: nach Jahr, Schauspielern oder Details fragen und erneut suchen.`
+    : '- Bei mehreren passenden Treffern kurz nachfragen (Titel + Jahr nennen). Ist eindeutig klar, was gewünscht ist → direkt request_media.'
+}
+- Bei Serien ohne Angabe: alle Staffeln.
 
 ## Ablauf Anfrage nachverfolgen ("Was ist mit X?", "Wann kommt X?", "Meine Anfrage ist immer noch nicht da")
 1. check_request mit dem Titel (allgemein "meine Anfragen" → my_requests, bei mehreren offenen nachfragen oder alle kurz prüfen).

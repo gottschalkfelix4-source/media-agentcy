@@ -22,7 +22,7 @@
 
 | | |
 |---|---|
-| 🎬 **Medienwünsche** | „Kannst du Dune 2 besorgen?“ → Suche über Jellyseerr/Overseerr oder Ombi, Anfrage im Namen des Nutzers, Tageslimit pro Nutzer |
+| 🎬 **Medienwünsche** | „Kannst du Dune 2 besorgen?“ → Suche über Jellyseerr/Overseerr oder Ombi, der Bot schickt Cover, Titel und Erscheinungsdatum und fragt erst nach einem „Ja“ an (keine Anfragen für den falschen Film), Anfrage im Namen des Nutzers, Tageslimit pro Nutzer |
 | 🔍 **Anfragen nachverfolgen** | „Was ist mit meiner Anfrage?“ → der Bot prüft Jellyseerr, Radarr/Sonarr und die Mediathek, erklärt in einfachen Worten, wo es hängt, und hilft gleich: neu suchen, Mediathek neu einlesen, Anfrage wiederholen oder den Admin erinnern (mit Sperrfrist gegen Dauerschleifen) |
 | 🔔 **Benachrichtigungen** | Sobald eine Anfrage verfügbar ist, bekommt der Nutzer eine persönliche WhatsApp, auch für Anfragen von der Jellyseerr-Webseite. Die Nachricht sagt nur „jetzt verfügbar“, ohne Jellyfin und Plex zu unterscheiden |
 | 🌐 **Webseiten-Anfragen zuordnen** | Anfragen von der Jellyseerr-/Ombi-Webseite landen automatisch beim richtigen Nutzer (über Jellyseerr-ID, Jellyfin-, Plex- oder Ombi-Name) und erscheinen unter *Anfragen*. Schon Fertiges wird still abgelegt, Wartendes gemeldet, sobald es da ist |
@@ -227,7 +227,7 @@ Poller (alle 5 min): fertige Anfragen + Auto-Fix-Ergebnisse → Benachrichtigung
 Web-Oberfläche ──► dieselbe Datenbank, Live-Events, Einstellungen (überlagern die Umgebung)
 ```
 
-Der **Nutzer-Agent** darf nur für sich selbst handeln: suchen, anfragen (Tageslimit), Tickets anlegen, diagnostizieren, `fix_media` (Ersetzen höchstens einmal pro Ticket und mit Tageslimit), eskalieren, eigenes Gedächtnis pflegen.
+Der **Nutzer-Agent** darf nur für sich selbst handeln: suchen, anfragen (erst nach bestätigtem Cover, Tageslimit), Tickets anlegen, diagnostizieren, `fix_media` (Ersetzen höchstens einmal pro Ticket und mit Tageslimit), eskalieren, eigenes Gedächtnis pflegen.
 
 Der **Admin-Agent** (deine Nummer) kann zusätzlich Nutzer freischalten, sperren und verknüpfen, Tickets verwalten, Nutzern Nachrichten ausrichten, Rundnachrichten schicken, den Systemzustand prüfen und das Gedächtnis aller Nutzer lesen.
 

@@ -39,6 +39,10 @@ const messenger: Messenger = {
     console.log(`\n${color}[Bot → ${who}${user.role === 'admin' ? ' (Admin)' : ''}]${c.reset}\n${text}\n`);
     if (isMe) waiting?.();
   },
+  async sendImage(user: User, url: string, caption: string) {
+    await messenger.sendText(user, `🖼️ ${url}
+${caption}`);
+  },
   async setTyping(user: User, typing: boolean) {
     if (typing && user.wa_id === currentWaId) stdout.write(`${c.dim}…tippt${c.reset}\n`);
   },

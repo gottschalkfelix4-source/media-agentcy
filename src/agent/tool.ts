@@ -6,6 +6,11 @@ import type { AppContext } from './context.js';
 export interface ToolContext extends AppContext {
   user: User;
   isAdmin: boolean;
+  /**
+   * The current agent run: when it started and what tools sent to the user meanwhile (stored in the chat
+   * history). quiet = web console, tools must not message the user's WhatsApp.
+   */
+  turn: { startedAt: number; sent: string[]; quiet?: boolean };
 }
 
 export interface Tool<S extends z.ZodObject = z.ZodObject> {

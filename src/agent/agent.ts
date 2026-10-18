@@ -18,8 +18,9 @@ export class Agent {
 
   /** Handles a message from the user and returns the reply text. */
   async handleMessage(user: User, text: string, images?: ImageInput[], kind: UsageKind = 'message'): Promise<string> {
-    const reply = await this.run(user, { role: 'user', content: text, images }, kind);
+    const { reply, sent } = await this.run(user, { role: 'user', content: text, images }, kind);
     this.ctx.repo.addMessage(user.id, 'user', images?.length ? `${text}\n[${images.length} Bild(er) gesendet]` : text);
+    for (const s of sent) this.ctx.repo.addMessage(user.id, 'assistant', s);
     this.ctx.repo.addMessage(user.id, 'assistant', reply);
     void this.maybeSummarize(user.id);
     return reply;
@@ -28,8 +29,9 @@ export class Agent {
   /** Handles a system event (e.g. "your request is available") and returns the message for the user. */
   async handleEvent(user: User, eventText: string): Promise<string> {
     const content = `${EVENT_PREFIX} ${eventText}`;
-    const reply = await this.run(user, { role: 'user', content }, 'event');
+    const { reply, sent } = await this.run(user, { role: 'user', content }, 'event');
     this.ctx.repo.addMessage(user.id, 'event', content);
+    for (const s of sent) this.ctx.repo.addMessage(user.id, 'assistant', s);
     this.ctx.repo.addMessage(user.id, 'assistant', reply);
     void this.maybeSummarize(user.id);
     return reply;
@@ -43,12 +45,18 @@ export class Agent {
     return res;
   }
 
-  private async run(user: User, incoming: Extract<ChatMessage, { role: 'user' }>, kind: UsageKind): Promise<string> {
+  private async run(user: User, incoming: Extract<ChatMessage, { role: 'user' }>, kind: UsageKind): Promise<{ reply: string; sent: string[] }> {
+    const turn = { startedAt: Date.now(), sent: [] as string[], quiet: kind === 'console' };
+    const reply = await this.loop(user, incoming, kind, turn);
+    return { reply, sent: turn.sent };
+  }
+
+  private async loop(user: User, incoming: Extract<ChatMessage, { role: 'user' }>, kind: UsageKind, turn: ToolContext['turn']): Promise<string> {
     const { config, repo, services, logger } = this.ctx;
     const isAdmin = user.role === 'admin';
     const tools: Tool[] = isAdmin ? adminTools : userTools;
     const specs = isAdmin ? this.adminSpecs : this.userSpecs;
-    const toolCtx: ToolContext = { ...this.ctx, user, isAdmin };
+    const toolCtx: ToolContext = { ...this.ctx, user, isAdmin, turn };
 
     const system = isAdmin ? adminSystemPrompt(config, services, repo, user) : userSystemPrompt(config, services, repo, user);
     const history: ChatMessage[] = repo.recentMessages(user.id, config.HISTORY_LIMIT).map((m) =>

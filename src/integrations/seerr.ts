@@ -19,6 +19,19 @@ export const REQUEST_STATUS: Record<number, string> = {
   5: 'abgeschlossen',
 };
 
+export const TMDB_POSTER = 'https://image.tmdb.org/t/p/w500';
+
+export interface MediaCard {
+  title: string;
+  /** YYYY-MM-DD release date (movie) or first air date (series). */
+  date?: string;
+  posterUrl?: string;
+  overview?: string;
+  seasons?: number;
+  /** Seerr media status, if known (5 = available). */
+  status?: number;
+}
+
 interface SeerrSearchResult {
   id: number;
   mediaType: 'movie' | 'tv' | 'person';
@@ -81,6 +94,11 @@ export class SeerrClient {
       id: number;
       title?: string;
       name?: string;
+      posterPath?: string;
+      releaseDate?: string;
+      firstAirDate?: string;
+      overview?: string;
+      numberOfSeasons?: number;
       seasons?: { seasonNumber: number; episodeCount: number; name: string }[];
       mediaInfo?: {
         status: number;
@@ -88,6 +106,19 @@ export class SeerrClient {
         requests?: { id: number; status: number; createdAt: string; requestedBy?: { id: number } }[];
       };
     }>(`/${mediaType}/${tmdbId}`, { language });
+  }
+
+  /** What the user sees before confirming a request: title, date, poster. */
+  async card(mediaType: 'movie' | 'tv', tmdbId: number): Promise<MediaCard> {
+    const d = await this.details(mediaType, tmdbId);
+    return {
+      title: d.title ?? d.name ?? `TMDB ${tmdbId}`,
+      date: (mediaType === 'movie' ? d.releaseDate : d.firstAirDate) || undefined,
+      posterUrl: d.posterPath ? `${TMDB_POSTER}${d.posterPath}` : undefined,
+      overview: d.overview || undefined,
+      seasons: d.numberOfSeasons,
+      status: d.mediaInfo?.status,
+    };
   }
 
   async title(mediaType: 'movie' | 'tv', tmdbId: number) {

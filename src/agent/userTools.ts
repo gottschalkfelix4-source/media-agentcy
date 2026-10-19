@@ -7,6 +7,7 @@ import { notifyAdmins, userLabel } from './context.js';
 import { offTopic } from './abuse.js';
 import { handToHermes, hermesAuto } from './hermes.js';
 import { checkRequest, requestFix } from './requestTools.js';
+import { ensureTicket } from './tickets.js';
 import { defineTool, ToolError, type Tool, type ToolContext } from './tool.js';
 
 const mediaType = z.enum(['movie', 'tv']).describe('movie = Film, tv = Serie');
@@ -253,7 +254,14 @@ export const diagnoseMedia = defineTool({
   async run({ type, title, tmdbId, season, episode }, ctx) {
     const { radarr, sonarr, jellyfin, plex } = ctx.services;
     if (!title && !tmdbId) throw new ToolError('title oder tmdbId angeben');
-    const out: Record<string, unknown> = {};
+    const label = `${title ?? `TMDB ${tmdbId}`}${season !== undefined ? ` S${season}${episode !== undefined ? `E${episode}` : ''}` : ''}`;
+    const ticket = ensureTicket(ctx, {
+      title: `Problem mit ${label}`,
+      description: `Automatisch angelegt bei der Prüfung von ${label}`,
+      category: 'other',
+      media: { title: title ?? label, type, tmdbId, season, episode },
+    });
+    const out: Record<string, unknown> = ticket ? { ticketId: ticket.id } : {};
 
     if (type === 'movie') {
       if (!radarr) out.radarr = 'nicht konfiguriert';
@@ -316,7 +324,8 @@ export const checkPlayback = defineTool({
     'Zeigt die aktuellen/letzten Wiedergabe-Sessions des Nutzers (Gerät, App, Direct Play vs. Transcoding + Gründe) und die letzten Jellyfin-Aktivitäten/Fehler. Hilfreich bei Ruckeln, Abbrüchen, "geht nicht".',
   schema: z.object({}),
   async run(_args, ctx) {
-    return playbackInfo(ctx, ctx.user.jellyfin_user_id, ctx.user.plex_username);
+    const ticket = ensureTicket(ctx, { title: 'Wiedergabeproblem', description: 'Automatisch angelegt bei der Prüfung der Wiedergabe', category: 'playback' });
+    return { ...(ticket ? { ticketId: ticket.id } : {}), ...(await playbackInfo(ctx, ctx.user.jellyfin_user_id, ctx.user.plex_username)) };
   },
 });
 
@@ -358,7 +367,7 @@ export const fixMedia = defineTool({
 - rescan: Radarr/Sonarr + Mediaserver-Bibliothek neu einlesen (Titel fehlt in App obwohl Datei da).
 - refresh_metadata: Metadaten/Poster in Jellyfin/Plex neu laden (falsches Bild/Titel/Beschreibung).`,
   schema: z.object({
-    ticketId: z.number().int().optional().describe('Pflicht für normale Nutzer'),
+    ticketId: z.number().int().optional().describe('Ticket aus report_problem/diagnose_media (fehlt es, legt das System eins an)'),
     action: z.enum(['replace_file', 'search_missing', 'rescan', 'refresh_metadata']),
     type: mediaType,
     arrId: z.number().int().optional().describe('radarrId bzw. sonarrId'),
@@ -371,9 +380,15 @@ export const fixMedia = defineTool({
   }),
   async run(a, ctx) {
     const { radarr, sonarr, jellyfin, plex } = ctx.services;
-    const ticket = a.ticketId ? ctx.repo.getTicket(a.ticketId) : undefined;
+    let ticket = a.ticketId ? ctx.repo.getTicket(a.ticketId) : undefined;
     if (!ctx.isAdmin) {
-      if (!ticket || ticket.user_id !== ctx.user.id) throw new ToolError('Für Nutzer ist eine gültige ticketId (eigenes Ticket) Pflicht. Erst report_problem.');
+      if (ticket && ticket.user_id !== ctx.user.id) throw new ToolError('Das Ticket gehört nicht zu diesem Nutzer.');
+      ticket ??= ensureTicket(ctx, {
+        title: `Problem mit ${a.label}`,
+        description: a.reason,
+        category: a.action === 'refresh_metadata' ? 'metadata' : a.action === 'replace_file' ? 'playback' : 'missing_media',
+        media: { title: a.label, type: a.type },
+      });
     }
 
     let result: unknown;

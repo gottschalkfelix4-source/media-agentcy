@@ -7,6 +7,7 @@ import { maybeSendDigest } from './digest.js';
 import { checkDisruptions } from './outage.js';
 import { checkStuckRequests } from './stuck.js';
 import { checkStaleHandoffs } from '../agent/hermes.js';
+import { resolveRequestTickets } from '../agent/tickets.js';
 
 const WATCH_TIMEOUT_HOURS = 72;
 const AVAILABLE = 5;
@@ -149,6 +150,7 @@ export class Poller {
         status = await this.ombiStatus(r, async () => (ombiMovies ??= await ombi.movieRequests()), async () => (ombiTv ??= await ombi.tvRequests()));
       }
       if (status === AVAILABLE) {
+        resolveRequestTickets(this.ctx.repo, r.user_id, { tmdbId: r.tmdb_id, title: r.title });
         const { event, template } = this.availableEvent(r.title, r.media_type, false);
         this.ctx.repo.markBotRequestNotified(r.id);
         if (r.external_id) this.ctx.repo.markNotified(r.source, r.external_id, r.user_id);
@@ -194,6 +196,7 @@ export class Poller {
         if (repo.wasNotified('seerr', key, u.id)) continue;
         repo.markNotified('seerr', key, u.id);
         if (bootstrap || botRequestIds.has(key)) continue; // handled by checkBotRequests / old history
+        resolveRequestTickets(repo, u.id, { tmdbId: req.media.tmdbId });
         const title = await seerr.title(req.media.mediaType, req.media.tmdbId).catch(() => 'deine Anfrage');
         const { event, template } = this.availableEvent(title, req.media.mediaType, false);
         this.notify(u.id, event, template);
@@ -216,6 +219,7 @@ export class Poller {
         if (repo.wasNotified('ombi', key, u.id)) continue;
         repo.markNotified('ombi', key, u.id);
         if (bootstrap || repo.botRequestsForUser(u.id, 50).some((b) => b.tmdb_id === m.theMovieDbId)) continue;
+        resolveRequestTickets(repo, u.id, { tmdbId: m.theMovieDbId, title: m.title });
         const { event, template } = this.availableEvent(m.title, 'movie', false);
         this.notify(u.id, event, template);
       }
@@ -229,6 +233,7 @@ export class Poller {
           if (repo.wasNotified('ombi', key, u.id)) continue;
           repo.markNotified('ombi', key, u.id);
           if (bootstrap || repo.botRequestsForUser(u.id, 50).some((b) => normalizeTitle(b.title) === normalizeTitle(t.title))) continue;
+          resolveRequestTickets(repo, u.id, { title: t.title });
           const { event, template } = this.availableEvent(t.title, 'tv', false);
           this.notify(u.id, event, template);
         }

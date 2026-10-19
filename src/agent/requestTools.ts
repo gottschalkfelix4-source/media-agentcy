@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { titleScore } from '../integrations/http.js';
 import { MEDIA_STATUS, REQUEST_STATUS } from '../integrations/seerr.js';
 import { notifyAdmins, userLabel } from './context.js';
+import { ensureTicket } from './tickets.js';
 import { defineTool, ToolError, type ToolContext } from './tool.js';
 
 type MediaType = 'movie' | 'tv';
@@ -449,10 +450,18 @@ Der Nutzer wird automatisch benachrichtigt, sobald der Titel verfügbar ist.`,
     }
 
     ctx.repo.setKv(kvKey, new Date().toISOString());
-    ctx.repo.logAction(ctx.user.id, null, 'request_fix', { action: a.action, title: a.title, tmdbId: a.tmdbId, mediaType: a.mediaType });
+    const ticket = ensureTicket(ctx, {
+      title: `Anfrage hängt: ${a.title}`,
+      description: `${a.title} (${a.mediaType === 'movie' ? 'Film' : 'Serie'}) ist angefragt, aber noch nicht da.`,
+      category: 'missing_media',
+      media: { title: a.title, type: a.mediaType, tmdbId: a.tmdbId },
+    });
+    if (ticket) ctx.repo.appendTicketAction(ticket.id, `request_fix: ${a.action}`, typeof result === 'string' ? result : JSON.stringify(result ?? 'ok'));
+    ctx.repo.logAction(ctx.user.id, ticket?.id ?? null, 'request_fix', { action: a.action, title: a.title, tmdbId: a.tmdbId, mediaType: a.mediaType });
     const notify = ensureTracked(ctx, { type: a.mediaType, tmdbId: a.tmdbId, title: a.title, requestId: a.requestId });
     return {
       ok: true,
+      ticketId: ticket?.id,
       result,
       note: notify ? 'Der Nutzer wird automatisch benachrichtigt, sobald der Titel verfügbar ist.' : undefined,
     };

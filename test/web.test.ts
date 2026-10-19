@@ -224,6 +224,58 @@ test('create user with Jellyfin account: credentials only via WhatsApp, welcome 
   }
 });
 
+test('admin chat can create tickets for itself and for users', async () => {
+  const { adminTools } = await import('../src/agent/adminTools.js');
+  const tool = adminTools.find((t) => t.name === 'create_ticket')!;
+  const create = { run: (a: unknown, c: unknown) => tool.run(tool.schema.parse(a) as never, c as never) };
+  const admin = app.repo.findUser(ADMIN)!;
+  const tctx = { ...app.ctx, user: admin, isAdmin: true, turn: { startedAt: Date.now(), sent: [] } };
+  const own = (await create.run({ title: 'Plex-Update testen', description: 'nach dem Update prüfen', category: 'server', severity: 'normal' } as never, tctx as never)) as {
+    ticketId: number;
+    hermes?: string;
+  };
+  assert.equal(app.repo.getTicket(own.ticketId)!.user_id, admin.id);
+  assert.equal(own.hermes, undefined, 'no Hermes without setup');
+  const ronja = app.repo.createUser('4915100000066', { display_name: 'Ronja', status: 'active' });
+  const forRonja = (await create.run({ title: 'Ton fehlt', description: 'Fire TV', category: 'audio_subtitles', user: 'Ronja' } as never, tctx as never)) as { ticketId: number };
+  const t = app.repo.getTicket(forRonja.ticketId)!;
+  assert.equal(t.user_id, ronja.id);
+  assert.equal(t.severity, 'normal');
+  assert.match(t.actions, /Vom Admin angelegt/);
+});
+
+test('user problems always get a ticket, even when the model skips report_problem', async () => {
+  const { checkPlayback, diagnoseMedia } = await import('../src/agent/userTools.js');
+  const { ensureTicket, resolveRequestTickets } = await import('../src/agent/tickets.js');
+  const lena = app.repo.createUser('4915100000055', { display_name: 'Lena', status: 'active' });
+  const tctx = { ...app.ctx, user: lena, isAdmin: false, turn: { startedAt: Date.now(), sent: [] } } as never;
+  const tickets = () => app.repo.listTickets({ userId: lena.id });
+
+  const pb = (await checkPlayback.run({} as never, tctx)) as { ticketId: number };
+  assert.equal(app.repo.getTicket(pb.ticketId)!.category, 'playback');
+  assert.equal(((await checkPlayback.run({} as never, tctx)) as { ticketId: number }).ticketId, pb.ticketId, 'same conversation, same ticket');
+
+  const d1 = (await diagnoseMedia.run({ type: 'movie', title: 'Dune' } as never, tctx)) as { ticketId: number };
+  const d2 = (await diagnoseMedia.run({ type: 'movie', title: 'dune' } as never, tctx)) as { ticketId: number };
+  assert.notEqual(d1.ticketId, pb.ticketId);
+  assert.equal(d1.ticketId, d2.ticketId);
+  assert.match(app.repo.getTicket(d1.ticketId)!.title, /Problem mit Dune/);
+  assert.equal(tickets().length, 2);
+
+  const req = ensureTicket({ ...(tctx as object), user: lena, isAdmin: false } as never, {
+    title: 'Anfrage hängt: Arrival',
+    description: 'x',
+    category: 'missing_media',
+    media: { title: 'Arrival', type: 'movie', tmdbId: 329865 },
+  })!;
+  resolveRequestTickets(app.repo, lena.id, { tmdbId: 329865 });
+  assert.equal(app.repo.getTicket(req.id)!.status, 'resolved');
+  assert.equal(app.repo.getTicket(d1.ticketId)!.status, 'open', 'other tickets stay open');
+
+  const admin = app.repo.findUser(ADMIN)!;
+  assert.equal(ensureTicket({ ...app.ctx, user: admin, isAdmin: true, turn: { startedAt: 0, sent: [] } } as never, { title: 'x', description: 'x', category: 'other' }), undefined);
+});
+
 test('Hermes: serious escalation is handed off signed, the callback resolves the ticket and tells user and admin', async () => {
   const { createServer } = await import('node:http');
   const { createHmac } = await import('node:crypto');

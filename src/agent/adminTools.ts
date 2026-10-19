@@ -4,7 +4,7 @@ import { pingAll } from '../integrations/index.js';
 import { limitStatus, resetLimits } from './abuse.js';
 import { userLabel } from './context.js';
 import { onboardOnApproval, onboardUser, type OnboardResult } from './onboarding.js';
-import { handToHermes } from './hermes.js';
+import { handToHermes, hermesAuto, hermesEnabled } from './hermes.js';
 import { getOutage, setMaintenance } from '../notifier/outage.js';
 import { collectNew, digestRecipients, digestText, sendDigest } from '../notifier/digest.js';
 import { checkRequest, requestFix } from './requestTools.js';
@@ -219,6 +219,39 @@ const listMediaAccounts = defineTool({
             .catch((e: Error) => e.message)
         : undefined,
     };
+  },
+});
+
+const createTicket = defineTool({
+  name: 'create_ticket',
+  description:
+    'Legt ein neues Ticket an, z. B. wenn der Admin ein Problem selbst bemerkt oder für einen Nutzer festhalten will. Ohne user läuft es auf den Admin. Ab der eingestellten Schwere bekommt Hermes es automatisch (falls eingerichtet).',
+  schema: z.object({
+    title: z.string().describe('Kurzer Titel, z. B. "Jellyfin: TV-Streaming bricht ab"'),
+    description: z.string().describe('Was genau los ist, inkl. Gerät/App/Fehlermeldung, falls bekannt'),
+    category: z.enum(['playback', 'missing_media', 'quality', 'audio_subtitles', 'metadata', 'download', 'account', 'server', 'other']),
+    severity: z.enum(['low', 'normal', 'high', 'critical']).default('normal'),
+    user: userRef.optional().describe('Für welchen Nutzer (bekommt beim Lösen Bescheid). Leer = Admin selbst'),
+    media: z
+      .object({
+        title: z.string(),
+        type: z.enum(['movie', 'tv']),
+        season: z.number().int().optional(),
+        episode: z.number().int().optional(),
+      })
+      .optional(),
+    hermes: z.boolean().optional().describe('An Hermes übergeben. Leer = automatisch je nach Schwere'),
+  }),
+  async run({ title, description, category, severity, user, media, hermes }, ctx) {
+    const owner = user ? resolveUser(ctx, user) : ctx.user;
+    const t = ctx.repo.createTicket({ user_id: owner.id, title, description, category, severity, media_ref: media });
+    ctx.repo.appendTicketAction(t.id, 'admin_created', 'Vom Admin angelegt');
+    const toHermes = hermes ?? hermesAuto(ctx.config, severity);
+    if (!toHermes) return { ticketId: t.id, for: userLabel(owner), status: t.status };
+    if (!hermesEnabled(ctx.config)) return { ticketId: t.id, for: userLabel(owner), status: t.status, hermes: 'Hermes ist nicht eingerichtet' };
+    const r = await handToHermes(ctx, { ticket: ctx.repo.getTicket(t.id)! });
+    if (r.ok) ctx.repo.updateTicket(t.id, { status: 'escalated' });
+    return { ticketId: t.id, for: userLabel(owner), status: r.ok ? 'escalated' : t.status, hermes: r.ok ? 'übergeben' : `fehlgeschlagen: ${r.error}` };
   },
 });
 
@@ -437,6 +470,7 @@ export const adminTools: Tool[] = [
   resetUserLimits,
   linkUser,
   listMediaAccounts,
+  createTicket,
   listTickets,
   ticketDetails,
   updateTicket,

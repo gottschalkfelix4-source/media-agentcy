@@ -220,7 +220,7 @@ export const SETTINGS: SettingDef[] = [
     label: 'Webhook-URL',
     type: 'url',
     placeholder: 'http://192.168.1.10:8644/webhooks/media-agentcy',
-    help: 'Route aus „hermes webhook subscribe media-agentcy …“. Leer = keine Weitergabe.',
+    help: 'http://<Hermes-IP>:8644/webhooks/<Routenname>. Die Route legst du in Hermes in ~/.hermes/config.yaml an (siehe README). Leer = keine Weitergabe.',
   },
   { key: 'HERMES_WEBHOOK_SECRET', group: 'hermes', label: 'Webhook-Secret', type: 'secret', help: 'Das Secret der Route. Jede Meldung wird damit signiert (HMAC-SHA256 mit Zeitstempel).' },
   {
@@ -228,8 +228,8 @@ export const SETTINGS: SettingDef[] = [
     group: 'hermes',
     label: 'Adresse dieses Bots für Hermes',
     type: 'url',
-    placeholder: 'http://192.168.1.10:8080',
-    help: 'Unter dieser Adresse erreicht Hermes den Bot, um sich zurückzumelden (…/webhook/hermes). Jede Übergabe bekommt einen eigenen Schlüssel.',
+    placeholder: 'http://192.168.1.10:8085',
+    help: 'Unter dieser Adresse erreicht Hermes den Bot, um sich zurückzumelden (…/webhook/hermes). Nimm den Host-Port aus Unraid (Standard 8085), nicht 8080. Jede Übergabe bekommt einen eigenen Schlüssel.',
   },
   {
     key: 'HERMES_MIN_SEVERITY',

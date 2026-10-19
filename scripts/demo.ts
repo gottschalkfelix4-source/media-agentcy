@@ -22,6 +22,9 @@ Object.assign(process.env, {
   LLM_BASE_URL: 'http://demo.invalid/v1',
   LLM_MODEL: 'demo-model',
   DEBOUNCE_MS: '500',
+  HERMES_WEBHOOK_URL: 'http://127.0.0.1:8644/webhooks/media-agentcy',
+  HERMES_WEBHOOK_SECRET: 'demo-secret',
+  HERMES_CALLBACK_URL: `http://127.0.0.1:${process.env.DEMO_PORT ?? '8090'}`,
 });
 
 const { createApp } = await import('../src/app.js');
@@ -220,4 +223,19 @@ const whatsapp = {
 bus.emitEvent({ type: 'user', userId: anna.id });
 const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
 startHttpServer({ app, whatsapp: whatsapp as never, version });
+
+// Fake Hermes Agent: accepts a hand-off, reports a status after 3 s and "fixed" after 8 s.
+const { createServer } = await import('node:http');
+createServer((rq, rs) => {
+  let body = '';
+  rq.on('data', (d) => (body += d));
+  rq.on('end', () => {
+    rs.writeHead(202, { 'content-type': 'application/json' }).end(JSON.stringify({ status: 'accepted' }));
+    const { callback } = JSON.parse(body) as { callback: { url: string; token: string } };
+    const report = (data: unknown) =>
+      fetch(callback.url, { method: 'POST', headers: { authorization: `Bearer ${callback.token}`, 'content-type': 'application/json' }, body: JSON.stringify(data) });
+    setTimeout(() => void report({ status: 'working', message: 'Jellyfin-Container hängt beim Start (Transcode-Cache voll), räume auf.' }), 3000);
+    setTimeout(() => void report({ status: 'fixed', message: 'Transcode-Cache geleert (38 GB), Jellyfin neu gestartet, Wiedergabe getestet.', user_message: 'Streaming läuft wieder.' }), 8000);
+  });
+}).listen(8644, '127.0.0.1');
 app.ctx.logger.info(`Demo läuft auf http://localhost:${app.ctx.config.HTTP_PORT} – Passwort steht in scripts/demo.ts (WEB_PASSWORD)`);

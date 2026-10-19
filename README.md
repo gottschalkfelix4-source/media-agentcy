@@ -34,6 +34,7 @@
 | 🛡️ **Missbrauchsschutz** | Der Bot bleibt beim Thema Mediaserver. Hausaufgaben, Texte, Code und Co. lehnt er ab, nach 3 Versuchen pausiert er für die Person bis zu 24 h und sagt dir Bescheid. Dazu Tageslimits für Nachrichten und Tokens und eine Längenbegrenzung für eingefügte Texte |
 | 🛠️ **Problemmeldungen** | Ticket → Diagnose über Radarr/Sonarr/Jellyfin/Plex → kleine Fehler selbst beheben (Datei ersetzen, fehlende Folgen suchen, Rescan, Metadaten) → Nutzer informieren, wenn die neue Datei da ist |
 | 🚨 **Eskalation** | Größere Probleme gehen per WhatsApp an dich. Du sprichst im selben Chat mit dem Agenten, er richtet den Nutzern deine Antworten aus |
+| 🤖 **Hermes Agent** | Ernste Probleme („Streaming geht nicht mehr“) und erkannte Ausfälle gibt der Bot an deinen [Hermes Agent](https://hermes-agent.nousresearch.com) weiter. Hermes sucht die Ursache, repariert und meldet sich zurück. Der Bot sagt dem Nutzer Bescheid, du bekommst jeden Zwischenstand per WhatsApp |
 | 🧠 **Gedächtnis pro Nutzer** | Fakten (Geräte, Vorlieben …), laufende Zusammenfassung früherer Gespräche, Ticket- und Anfrageverlauf |
 | 👥 **Nutzer-Import** | Konten aus Jellyfin, Plex und Jellyseerr auf einen Blick, zusammengeführt pro Person. WhatsApp-Nummer eintragen, importieren, fertig verknüpft |
 | 🖥️ **Web-Oberfläche** | Nutzer freischalten, Chats mitlesen und übernehmen, Tickets, Token-Verbrauch, alle Einstellungen live, am Handy und am Desktop |
@@ -145,6 +146,50 @@ Ohne Webhook prüft der Bot alle 5 Minuten, ob Anfragen fertig sind. Mit Webhook
 
 Jellyseerr → *Einstellungen → Benachrichtigungen → Webhook* → URL `http://<unraid-ip>:8085/webhook/seerr` (mit `?token=…`, falls ein HTTP-Token gesetzt ist), Ereignis *Medien verfügbar*.
 
+### Optional: Hermes Agent
+
+Ernste Probleme kann der Bot an deinen [Hermes Agent](https://hermes-agent.nousresearch.com) übergeben:
+
+```
+Nutzer: „TV geht gar nicht mehr“ → Bot: Ticket, Diagnose, Eskalation (Schwere „hoch“)
+   ├─► du: WhatsApp „🚨 Ticket #12 … 🤖 An Hermes übergeben“
+   └─► Hermes-Webhook (signiert) → Hermes sucht und repariert
+          └─► POST /webhook/hermes {"status":"fixed", …}
+                 ├─► Nutzer: „Ist behoben, probier's nochmal“ (Ticket gelöst)
+                 └─► du: „✅ Hermes hat Ticket #12 gelöst: …“
+```
+
+Automatisch übergeben werden eskalierte Tickets ab der eingestellten Schwere (Standard: *hoch*) und erkannte Ausfälle von Jellyfin/Plex. Andere Tickets übergibst du in der Oberfläche (Ticket öffnen → *An Hermes übergeben*) oder im Admin-Chat („Gib Ticket 7 an Hermes“). Meldet sich Hermes nach 6 Stunden nicht, erinnert dich der Bot.
+
+**1. Route in Hermes anlegen.** In `~/.hermes/config.yaml` (die Werkzeuge lassen sich nur hier freigeben, nicht per `hermes webhook subscribe`):
+
+```yaml
+platforms:
+  webhook:
+    enabled: true
+    extra:
+      host: 0.0.0.0          # vom Bot-Container aus erreichbar
+      port: 8644
+      routes:
+        media-agentcy:
+          secret: "<langes zufälliges Secret>"
+          events: ["ticket", "outage"]
+          prompt: "{task}"
+          toolsets: ["debugging", "skills", "memory"]   # Terminal + Dateien, damit Hermes nachsehen und sich zurückmelden kann
+          deliver: "log"     # oder z. B. telegram, wenn du Hermes' ausführlichen Bericht zusätzlich dort willst
+```
+
+Ohne `toolsets` bekommen Webhook-Sitzungen in Hermes nur Websuche. Dann kann Hermes weder auf den Server schauen noch sich beim Bot zurückmelden. Hermes startet neu, danach prüft `curl http://<hermes-ip>:8644/health` die Erreichbarkeit.
+
+**2. Im Bot eintragen.** Einstellungen → *Hermes Agent*:
+- Webhook-URL: `http://<hermes-ip>:8644/webhooks/media-agentcy`
+- Secret: das aus der Route
+- Adresse dieses Bots: `http://<unraid-ip>:8085`. Unter dieser Adresse meldet sich Hermes zurück.
+
+**Was Hermes bekommt:** eine Aufgabenbeschreibung mit Ticket, Diagnose des Bots, bisherigen Versuchen und den internen Adressen deiner Dienste (ohne API-Keys und ohne Telefonnummern), außerdem einen `curl`-Befehl mit einem Schlüssel, der nur für diese eine Übergabe gilt. Hermes meldet `working` (Zwischenstand), `fixed`, `failed` oder `needs_admin`, optional mit einem Satz für den Nutzer.
+
+Damit Hermes etwas reparieren kann, braucht er Zugriff auf den Server (z. B. SSH oder Docker). Wie viel er darf, legst du in Hermes fest. Lass die Freigabe für gefährliche Befehle dort an: Der Text des Nutzers steht zwar als „nur Information“ markiert in der Aufgabe, bleibt aber fremder Text.
+
 ### API-Keys
 
 | Dienst | Wo |
@@ -221,6 +266,7 @@ Ein in der Oberfläche gesetzter Wert hat Vorrang vor Umgebungsvariablen. „Zur
 - „Leg Lisa ein Jellyfin-Konto an“
 - „Heute Abend Wartung bis ca. 23 Uhr, Festplattentausch“ / „Wartung ist vorbei“
 - „Zeig mir den Wochenrückblick“ / „Schick den Wochenrückblick jetzt raus“
+- „Gib Ticket 7 an Hermes, schau mal nach dem Transcoding“
 
 Befehle ohne KI: `/hilfe`, `/reset` (Verlauf leeren), `/status` (Admin: Dienste prüfen).
 
@@ -247,6 +293,7 @@ Der **Admin-Agent** (deine Nummer) kann zusätzlich Nutzer freischalten, sperren
 - `replace_file` löscht die aktuelle Datei, bevor neu gesucht wird. Das ist abschaltbar (`AUTOFIX_REPLACE_FILE=false`), läuft höchstens einmal pro Ticket und unterliegt einem Tageslimit. Findet sich nach 72 h nichts, geht es automatisch an dich.
 - Beim **Kontoanlegen** erzeugt der Bot ein zufälliges Passwort und schickt es direkt per WhatsApp. Es landet weder bei der KI noch in der Oberfläche, im Verlauf steht nur `••••••`. Der Nutzer sollte es in Jellyfin ändern.
 - **Sprachnachrichten** gehen an den eingestellten Transkriptions-Dienst (Einstellungen → *Sprachnachrichten*), und zwar erst, nachdem die Nummer als freigeschalteter Nutzer erkannt wurde. Mit einem lokalen faster-whisper-Server verlassen sie dein Netz nicht.
+- **Hermes** bekommt Meldungen nur signiert (HMAC-SHA256 mit Zeitstempel). Jede Übergabe hat einen eigenen Rückmelde-Schlüssel. Er gilt 7 Tage und nur bis zur abschließenden Meldung, in der Datenbank liegt nur sein Hash. Was Hermes auf dem Server darf, entscheidest du in Hermes.
 - Für **Wochenrückblick** und Wartungs-Ablauf zählt die Zeitzone des Containers (`TZ`, z. B. `Europe/Berlin`).
 - Baileys ist eine **inoffizielle** WhatsApp-Bibliothek. Der Bot verschickt nur Antworten und Benachrichtigungen, mit Abstand zwischen den Nachrichten. Für Massen-Broadcasts ist er nicht gedacht.
 - Der **ChatGPT-Login** nutzt die interne Codex-Schnittstelle von OpenAI. Sie ist nicht offiziell und kann sich jederzeit ändern.
@@ -303,7 +350,7 @@ src/
   messaging/    Router: Onboarding, Zugriff, Debounce, Warteschlangen
   notifier/     Poller: fertige Anfragen, Auto-Fix-Follow-up
   whatsapp/     Baileys-Client (QR-Login, LID→Telefonnummer, Bilder)
-  server/       Web-API (Login, Nutzer, Tickets, Einstellungen, Live-Events), /health, /qr, /webhook/seerr
+  server/       Web-API (Login, Nutzer, Tickets, Einstellungen, Live-Events), /health, /qr, /webhook/seerr, /webhook/hermes
   settings/     Einstellungs-Registry + Speicher (Web-Werte überlagern die Umgebung, live übernommen)
   cli/          lokaler Test-Chat
 web/            Admin-Oberfläche (React, Vite, Tailwind)

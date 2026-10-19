@@ -214,6 +214,18 @@ export interface TicketDetail {
   user: { id: number; label: string; name: string } | null;
   watches: { id: number; kind: string; label: string; done: number; created_at: string }[];
   log: ActionEntry[];
+  hermes: { enabled: boolean; handoffs: Handoff[] };
+}
+
+export type HandoffStatus = 'sent' | 'working' | 'fixed' | 'failed' | 'needs_admin' | 'send_failed';
+
+export interface Handoff {
+  id: number;
+  status: HandoffStatus;
+  summary: string;
+  last_message: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface SettingDef {

@@ -34,6 +34,12 @@ const ACTIONS: Record<string, string> = {
   digest_skipped: 'Wochenrückblick übersprungen',
   digest_preference: 'Wochenrückblick an/ab',
   voice_transcribed: 'Sprachnachricht umgewandelt',
+  hermes_handoff: 'An Hermes übergeben',
+  hermes_send_failed: 'Hermes nicht erreicht',
+  hermes_failed: 'Hermes: nicht lösbar',
+  hermes_working: 'Hermes: Zwischenstand',
+  hermes_fixed: 'Hermes: behoben',
+  hermes_needs_admin: 'Hermes: braucht dich',
 };
 
 const actionLabel = (a: string) => ACTIONS[a] ?? a.replace(/_/g, ' ');

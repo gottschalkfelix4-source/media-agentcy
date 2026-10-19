@@ -4,6 +4,7 @@ import { pingAll } from '../integrations/index.js';
 import { limitStatus, resetLimits } from './abuse.js';
 import { userLabel } from './context.js';
 import { onboardOnApproval, onboardUser, type OnboardResult } from './onboarding.js';
+import { handToHermes } from './hermes.js';
 import { getOutage, setMaintenance } from '../notifier/outage.js';
 import { collectNew, digestRecipients, digestText, sendDigest } from '../notifier/digest.js';
 import { checkRequest, requestFix } from './requestTools.js';
@@ -293,6 +294,25 @@ const resolveTicket = defineTool({
   },
 });
 
+const handToHermesTool = defineTool({
+  name: 'hand_to_hermes',
+  description:
+    'Gibt ein Ticket an den Hermes Agent des Admins weiter: Hermes sucht die Ursache, repariert und meldet sich zurück; der Nutzer bekommt dann automatisch Bescheid. Für Tickets, die nicht schon automatisch übergeben wurden.',
+  schema: z.object({
+    ticketId: z.number().int(),
+    note: z.string().optional().describe('Hinweis des Admins an Hermes, z. B. Vermutung oder was er nicht anfassen soll'),
+  }),
+  async run({ ticketId, note }, ctx) {
+    const t = ctx.repo.getTicket(ticketId);
+    if (!t) throw new ToolError('Ticket nicht gefunden');
+    if (t.status === 'resolved' || t.status === 'closed') throw new ToolError('Ticket ist schon erledigt.');
+    const r = await handToHermes(ctx, { ticket: t, note });
+    if (!r.ok) throw new ToolError(r.error);
+    if (t.status !== 'escalated') ctx.repo.updateTicket(t.id, { status: 'escalated' });
+    return { ok: true, note: 'Hermes hat das Ticket. Du meldest dem Admin sein Ergebnis, sobald es kommt (passiert automatisch).' };
+  },
+});
+
 const messageUser = defineTool({
   name: 'message_user',
   description:
@@ -421,6 +441,7 @@ export const adminTools: Tool[] = [
   ticketDetails,
   updateTicket,
   resolveTicket,
+  handToHermesTool,
   messageUser,
   broadcast,
   rememberAboutUser,

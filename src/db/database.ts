@@ -142,6 +142,21 @@ const MIGRATIONS: string[] = [
   `
   ALTER TABLE users ADD COLUMN digest INTEGER NOT NULL DEFAULT 1;  -- weekly "new on the server" message, 0 = opted out
   `,
+  `
+  CREATE TABLE handoffs (                  -- problems handed to the Hermes agent
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticket_id INTEGER REFERENCES tickets(id) ON DELETE SET NULL,
+    kind TEXT NOT NULL,                    -- ticket | outage
+    token_hash TEXT NOT NULL UNIQUE,       -- sha256 of the callback token Hermes reports back with
+    status TEXT NOT NULL DEFAULT 'sent',   -- sent | working | fixed | failed | needs_admin | send_failed
+    summary TEXT NOT NULL,
+    last_message TEXT,
+    reminded INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX idx_handoffs_ticket ON handoffs(ticket_id);
+  `,
 ];
 
 export function openDatabase(file: string): DatabaseSync {

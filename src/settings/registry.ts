@@ -49,6 +49,12 @@ export const GROUPS: SettingGroup[] = [
   { id: 'notify', label: 'Benachrichtigungen' },
   { id: 'digest', label: 'Wochenrückblick', description: '„Neu auf dem Server“: einmal pro Woche eine feste Nachricht (ohne KI) mit den neuen Filmen und Folgen. Nutzer können ihn mit „Wochenrückblick aus“ abbestellen.' },
   { id: 'disruption', label: 'Störungen & Wartung', description: 'Bekannte Störungen beantwortet der Bot mit einem festen Hinweis, statt jeden einzeln zu diagnostizieren. Den Wartungshinweis setzt du auf der Übersicht oder per Chat.' },
+  {
+    id: 'hermes',
+    label: 'Hermes Agent',
+    description:
+      'Ernste Probleme (z. B. „Streaming geht nicht mehr“) gibt der Bot an deinen Hermes Agent weiter. Hermes sucht die Ursache, repariert sie und meldet sich beim Bot zurück – der gibt dem Nutzer Bescheid, du bekommst jeden Zwischenstand per WhatsApp. Einrichtung in Hermes: siehe README.',
+  },
   { id: 'tuning', label: 'Feintuning', description: 'Gedächtnis und Verarbeitung. Normalerweise nicht nötig.' },
   { id: 'system', label: 'System', description: 'Server und Sicherheit.' },
 ];
@@ -207,6 +213,40 @@ export const SETTINGS: SettingDef[] = [
     default: 'true',
     help: 'Der Bot pingt die Mediaserver bei jeder Prüfrunde. Zweimal hintereinander nicht erreichbar = Störung: Du bekommst eine Nachricht, Nutzer einen festen Hinweis (ohne KI) und eine Entwarnung, sobald es wieder läuft.',
   },
+
+  {
+    key: 'HERMES_WEBHOOK_URL',
+    group: 'hermes',
+    label: 'Webhook-URL',
+    type: 'url',
+    placeholder: 'http://192.168.1.10:8644/webhooks/media-agentcy',
+    help: 'Route aus „hermes webhook subscribe media-agentcy …“. Leer = keine Weitergabe.',
+  },
+  { key: 'HERMES_WEBHOOK_SECRET', group: 'hermes', label: 'Webhook-Secret', type: 'secret', help: 'Das Secret der Route. Jede Meldung wird damit signiert (HMAC-SHA256 mit Zeitstempel).' },
+  {
+    key: 'HERMES_CALLBACK_URL',
+    group: 'hermes',
+    label: 'Adresse dieses Bots für Hermes',
+    type: 'url',
+    placeholder: 'http://192.168.1.10:8080',
+    help: 'Unter dieser Adresse erreicht Hermes den Bot, um sich zurückzumelden (…/webhook/hermes). Jede Übergabe bekommt einen eigenen Schlüssel.',
+  },
+  {
+    key: 'HERMES_MIN_SEVERITY',
+    group: 'hermes',
+    label: 'Automatisch weitergeben ab',
+    type: 'select',
+    default: 'high',
+    options: [
+      { value: 'critical', label: 'Kritisch (z. B. für alle kaputt)' },
+      { value: 'high', label: 'Hoch (z. B. Streaming geht nicht mehr)' },
+      { value: 'normal', label: 'Normal (alles, was eskaliert wird)' },
+      { value: 'low', label: 'Immer' },
+    ],
+    help: 'Gilt für Probleme, die der Bot nicht selbst lösen kann und an dich eskaliert. Einzelne Tickets kannst du auch von Hand übergeben.',
+  },
+  { key: 'HERMES_OUTAGES', group: 'hermes', label: 'Erkannte Ausfälle von Jellyfin/Plex weitergeben', type: 'bool', default: 'true', help: 'Braucht „Ausfälle automatisch erkennen“ unter Störungen & Wartung.' },
+  { key: 'HERMES_TIMEOUT_HOURS', group: 'hermes', label: 'Erinnern, wenn Hermes sich nicht meldet (Stunden)', type: 'int', default: '6', help: '0 = nie erinnern.' },
 
   { key: 'NOTIFY_POLL_MINUTES', group: 'notify', label: 'Prüfintervall (Minuten)', type: 'int', default: '5', help: 'Wie oft auf fertige Anfragen und Auto-Fixes geprüft wird.' },
   {

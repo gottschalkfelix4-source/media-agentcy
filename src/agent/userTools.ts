@@ -5,6 +5,7 @@ import { titleScore } from '../integrations/http.js';
 import { collectNew } from '../notifier/digest.js';
 import { notifyAdmins, userLabel } from './context.js';
 import { offTopic } from './abuse.js';
+import { handToHermes, hermesAuto } from './hermes.js';
 import { checkRequest, requestFix } from './requestTools.js';
 import { defineTool, ToolError, type Tool, type ToolContext } from './tool.js';
 
@@ -480,7 +481,9 @@ export const escalateToAdmin = defineTool({
     summary: z.string().describe('Problem in 1-3 Sätzen'),
     diagnosis: z.string().describe('Was du herausgefunden hast (technisch, für den Admin)'),
     triedSoFar: z.string().describe('Was bereits versucht wurde'),
-    severity: z.enum(['low', 'normal', 'high', 'critical']),
+    severity: z
+      .enum(['low', 'normal', 'high', 'critical'])
+      .describe('high = etwas Wichtiges geht für den Nutzer gar nicht mehr (Streaming, Login, App verbindet nicht); critical = betrifft vermutlich alle'),
   }),
   async run(a, ctx) {
     let ticket = a.ticketId ? ctx.repo.getTicket(a.ticketId) : undefined;
@@ -496,11 +499,20 @@ export const escalateToAdmin = defineTool({
     }
     ctx.repo.updateTicket(ticket.id, { status: 'escalated', severity: a.severity, diagnosis: a.diagnosis });
     ctx.repo.appendTicketAction(ticket.id, 'escalated', a.triedSoFar);
+    const hermes = hermesAuto(ctx.config, a.severity) ? await handToHermes(ctx, { ticket: ctx.repo.getTicket(ticket.id)! }) : undefined;
     const icon = { low: 'ℹ️', normal: '⚠️', high: '🚨', critical: '🔥' }[a.severity];
+    const hermesLine = !hermes ? '' : hermes.ok ? '\n\n🤖 An Hermes übergeben – ich melde mich mit seinem Ergebnis.' : `\n\n⚠️ Übergabe an Hermes fehlgeschlagen: ${hermes.error}`;
     await notifyAdmins(
       ctx,
-      `${icon} *Ticket #${ticket.id}* (${a.severity}) von ${userLabel(ctx.user)}\n\n*Problem:* ${a.summary}\n*Diagnose:* ${a.diagnosis}\n*Versucht:* ${a.triedSoFar}\n\nAntworte mir hier, um es zu besprechen oder dem Nutzer etwas auszurichten.`,
+      `${icon} *Ticket #${ticket.id}* (${a.severity}) von ${userLabel(ctx.user)}\n\n*Problem:* ${a.summary}\n*Diagnose:* ${a.diagnosis}\n*Versucht:* ${a.triedSoFar}${hermesLine}\n\nAntworte mir hier, um es zu besprechen oder dem Nutzer etwas auszurichten.`,
     );
+    if (hermes?.ok) {
+      return {
+        ok: true,
+        ticketId: ticket.id,
+        note: 'Admin ist informiert und die Technik schaut sich das jetzt direkt an. Sag dem Nutzer, dass sich jemand darum kümmert und er automatisch Bescheid bekommt, sobald es behoben ist.',
+      };
+    }
     return { ok: true, ticketId: ticket.id, note: 'Admin ist informiert.' };
   },
 });

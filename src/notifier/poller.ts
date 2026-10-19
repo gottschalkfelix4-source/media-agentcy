@@ -6,6 +6,7 @@ import { syncRequests } from './requestSync.js';
 import { maybeSendDigest } from './digest.js';
 import { checkDisruptions } from './outage.js';
 import { checkStuckRequests } from './stuck.js';
+import { checkStaleHandoffs } from '../agent/hermes.js';
 
 const WATCH_TIMEOUT_HOURS = 72;
 const AVAILABLE = 5;
@@ -57,6 +58,7 @@ export class Poller {
         await this.step('watches', () => this.checkWatches()),
         await this.step('stuck-requests', () => this.stuckRequests()),
         await this.step('digest', () => maybeSendDigest(this.ctx)),
+        await this.step('hermes', () => checkStaleHandoffs(this.ctx)),
       ];
       this.lastRun = { at: new Date().toISOString(), ok: results.every(Boolean) };
     } finally {

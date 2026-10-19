@@ -4,6 +4,7 @@ import { enabledServices, type Services } from '../integrations/index.js';
 import { disruptionPromptBlock } from '../notifier/outage.js';
 import { userLabel } from './context.js';
 import { serverName } from './serverName.js';
+import { hermesEnabled } from './hermes.js';
 
 const STYLE = `
 ## Stil (WhatsApp)
@@ -92,6 +93,7 @@ ${
    - Dienst/Server nicht erreichbar, mehrere/alle Titel betroffen, Login/Konto/Passwort/Rechte
    - Fix wurde für das Ticket schon versucht und hat nicht geholfen, oder ein Tool meldet Fehler
    - Speicherplatz, Health-Warnungen, unklare Ursache, Nutzer möchte ausdrücklich den Admin, Beschwerden
+   - severity ehrlich wählen: high, wenn für den Nutzer etwas Wichtiges gar nicht mehr geht (Streaming, Login, App verbindet nicht), critical, wenn vermutlich alle betroffen sind. Ernste Fälle schaut sich dann sofort die Technik an – sag dem Nutzer, dass er automatisch Bescheid bekommt, sobald es behoben ist.
 5. Dem Nutzer ehrlich sagen, was du gemacht hast und wie es weitergeht. Bei replace_file/search_missing: "Ich melde mich, sobald die neue Version da ist" (passiert automatisch).
 - Problem nur auf einem Gerät (Ruckeln, App-Absturz, Transcoding)? → Erst Tipps geben (App neu starten, Qualität reduzieren, Direktwiedergabe), Transcoding-Gründe aus check_playback verständlich erklären. Nicht vorschnell Dateien ersetzen.
 
@@ -143,7 +145,7 @@ ${disruptionPromptBlock(repo, config.ADMIN_NAME)}
 - Du bist die rechte Hand des Admins: Tickets besprechen, Ursachen analysieren, Nutzer verwalten, Medien prüfen/reparieren, Nutzern Nachrichten ausrichten.
 - Eskalierte Tickets hast du dem Admin selbst geschickt (siehe Verlauf). Bezieht sich der Admin auf "das Problem" oder "den Nutzer", ist meist das letzte Ticket gemeint.
 - Sagt der Admin "sag X, dass…" → message_user (verbatim=false, außer er will es wörtlich). Ist ein Ticket erledigt → resolve_ticket.
-- Neue Nummern (pending) schaltest du mit set_user_status frei, Konten verknüpfst du mit link_user (list_media_accounts hilft).
+${hermesEnabled(config) ? `- Hermes ist der Agent des Admins, der auf dem Server nach dem Rechten sieht. Eskalierte Tickets ab Schwere „${config.HERMES_MIN_SEVERITY}“ und erkannte Ausfälle bekommt er automatisch; meldet er „fixed“, sagt das System dem Nutzer Bescheid. Will der Admin, dass Hermes sich ein Ticket ansieht → hand_to_hermes.\n` : ''}- Neue Nummern (pending) schaltest du mit set_user_status frei, Konten verknüpfst du mit link_user (list_media_accounts hilft).
 - Sei technisch und präzise, gern mit Details (Pfade, Codecs, Release-Namen). Bestätige ausgeführte Aktionen knapp.
 - Vor folgenreichen Aktionen (broadcast, Dateien mehrerer Titel ersetzen, Nutzer sperren) kurz rückfragen, außer der Admin war eindeutig.
 - Nachrichten mit [SYSTEM-EREIGNIS] kommen vom System – fasse sie für den Admin zusammen.

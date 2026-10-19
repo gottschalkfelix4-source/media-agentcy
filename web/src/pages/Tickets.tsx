@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { LifeBuoy, Search } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { api, queryClient, type Ticket, type TicketDetail, type TicketStatus } from '../api';
+import { api, queryClient, type HandoffStatus, type Ticket, type TicketDetail, type TicketStatus } from '../api';
 import {
   Badge,
   Button,
@@ -22,6 +22,7 @@ import {
   TICKET_STATUS,
   Textarea,
   Toggle,
+  type Tone,
   categoryLabel,
   fmtDateTime,
   toast,
@@ -30,6 +31,62 @@ import {
 import { Link, setQuery, useLocation } from '../router';
 
 type Filter = 'active' | 'escalated' | 'resolved' | 'all';
+
+const HANDOFF: Record<HandoffStatus, { label: string; tone: Tone }> = {
+  sent: { label: 'Übergeben', tone: 'info' },
+  working: { label: 'Arbeitet daran', tone: 'info' },
+  fixed: { label: 'Behoben', tone: 'ok' },
+  failed: { label: 'Nicht lösbar', tone: 'danger' },
+  needs_admin: { label: 'Braucht dich', tone: 'warn' },
+  send_failed: { label: 'Nicht erreicht', tone: 'danger' },
+};
+
+/** Hand-offs to the Hermes Agent and the button to hand the ticket over. */
+function HermesSection({ id, data }: { id: number; data: TicketDetail }) {
+  const [note, setNote] = useState('');
+  const send = useMutation({
+    mutationFn: () => api(`/tickets/${id}/hermes`, { method: 'POST', body: { note: note.trim() || undefined } }),
+    onSuccess: () => {
+      toast('An Hermes übergeben – du bekommst sein Ergebnis per WhatsApp');
+      setNote('');
+      void queryClient.invalidateQueries({ queryKey: ['ticket', id] });
+      void queryClient.invalidateQueries({ queryKey: ['tickets'] });
+    },
+    onError: toastError,
+  });
+  const { handoffs } = data.hermes;
+  const busy = handoffs.some((h) => h.status === 'sent' || h.status === 'working');
+  const done = data.ticket.status === 'resolved' || data.ticket.status === 'closed';
+  if (!handoffs.length && done) return null;
+  return (
+    <div>
+      <h3 className="mb-2 text-xs font-semibold tracking-wide text-fg-3 uppercase">Hermes Agent</h3>
+      {handoffs.length > 0 && (
+        <ul className="mb-3 space-y-2 text-[13px]">
+          {handoffs.map((h) => (
+            <li key={h.id} className="rounded-lg bg-surface-2 p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge tone={HANDOFF[h.status].tone}>{HANDOFF[h.status].label}</Badge>
+                <span className="text-[11px] text-fg-3">
+                  übergeben {fmtDateTime(h.created_at)} · zuletzt <RelTime value={h.updated_at} />
+                </span>
+              </div>
+              {h.last_message && <p className="mt-1.5 whitespace-pre-wrap text-fg-2">{h.last_message}</p>}
+            </li>
+          ))}
+        </ul>
+      )}
+      {!done && !busy && (
+        <div className="flex flex-wrap gap-2">
+          <Input className="min-w-48 flex-1" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Hinweis für Hermes (optional)" />
+          <Button loading={send.isPending} onClick={() => send.mutate()}>
+            {handoffs.length ? 'Nochmal an Hermes geben' : 'An Hermes übergeben'}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function TicketModal({ id, onClose }: { id: number; onClose: () => void }) {
   const q = useQuery({ queryKey: ['ticket', id], queryFn: () => api<TicketDetail>(`/tickets/${id}`) });
@@ -168,6 +225,8 @@ function TicketModal({ id, onClose }: { id: number; onClose: () => void }) {
               </ul>
             </div>
           )}
+
+          {q.data.hermes.enabled || q.data.hermes.handoffs.length ? <HermesSection id={id} data={q.data} /> : null}
 
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Lösung" help="Wird im Ticket gespeichert.">

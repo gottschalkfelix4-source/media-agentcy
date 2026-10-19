@@ -7,6 +7,7 @@ import type { App } from '../app.js';
 import { blockedBy, limitStatus, resetLimits } from '../agent/abuse.js';
 import { userLabel } from '../agent/context.js';
 import { onboardOnApproval, onboardUser } from '../agent/onboarding.js';
+import { handToHermes, hermesEnabled } from '../agent/hermes.js';
 import type { Config } from '../config.js';
 import type { TicketStatus, User, UserPatch } from '../db/repo.js';
 import { bus, type AppEvent } from '../events.js';
@@ -617,7 +618,22 @@ export function createApi(deps: ApiDeps) {
       user: u ? { id: u.id, label: userLabel(u), name: u.display_name ?? u.push_name ?? u.wa_id } : null,
       watches: repo.watchesForTicket(t.id),
       log: repo.listActions({ ticketId: t.id, limit: 50 }),
+      hermes: {
+        enabled: hermesEnabled(ctx.config),
+        handoffs: repo.handoffsForTicket(t.id).map(({ token_hash: _, ...h }) => h),
+      },
     });
+  });
+
+  api.post('/tickets/:id/hermes', async (c) => {
+    const t = repo.getTicket(idParam(c));
+    if (!t) throw new HttpError(404, 'Ticket nicht gefunden');
+    if (t.status === 'resolved' || t.status === 'closed') throw new HttpError(400, 'Ticket ist schon erledigt.');
+    const { note } = await body(c, z.object({ note: z.string().trim().max(1000).optional() }));
+    const r = await handToHermes(ctx, { ticket: t, note: note || undefined });
+    if (!r.ok) throw new HttpError(502, r.error);
+    if (t.status !== 'escalated') repo.updateTicket(t.id, { status: 'escalated' });
+    return c.json({ ok: true });
   });
 
   api.patch('/tickets/:id', async (c) => {

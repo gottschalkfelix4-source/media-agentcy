@@ -1,5 +1,6 @@
 import { notifyAdmins, type AppContext } from '../agent/context.js';
 import type { Repo, User } from '../db/repo.js';
+import { handToHermes, hermesEnabled } from '../agent/hermes.js';
 
 /**
  * Known disruptions: a maintenance notice set by the admin, or an outage detected by pinging the media
@@ -201,8 +202,10 @@ export async function checkDisruptions(ctx: AppContext) {
   const o: Outage = { services: failed, since: new Date().toISOString(), error };
   repo.setKv(K.outage, JSON.stringify(o));
   repo.logAction(null, null, 'outage_detected', { services: failed, error });
+  const hermes = config.HERMES_OUTAGES && hermesEnabled(config) ? await handToHermes(ctx, { outage: { services: failed.map((s) => SERVICE_LABEL[s] ?? s), error } }) : undefined;
+  const hermesLine = !hermes ? '' : hermes.ok ? '\n🤖 Hermes ist informiert und schaut nach.' : `\n⚠️ Übergabe an Hermes fehlgeschlagen: ${hermes.error}`;
   await notifyAdmins(
     ctx,
-    `⚠️ *Störung erkannt*: ${labels(failed)} nicht erreichbar${error ? ` (${error})` : ''}.\nNutzer, die jetzt schreiben, bekommen automatisch einen Hinweis und eine Entwarnung, sobald es wieder läuft. Ich melde mich, wenn es wieder geht.`,
+    `⚠️ *Störung erkannt*: ${labels(failed)} nicht erreichbar${error ? ` (${error})` : ''}.\nNutzer, die jetzt schreiben, bekommen automatisch einen Hinweis und eine Entwarnung, sobald es wieder läuft. Ich melde mich, wenn es wieder geht.${hermesLine}`,
   );
 }

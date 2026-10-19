@@ -63,6 +63,21 @@ export interface Ticket {
   resolved_at: string | null;
 }
 
+export type HandoffStatus = 'sent' | 'working' | 'fixed' | 'failed' | 'needs_admin' | 'send_failed';
+
+export interface Handoff {
+  id: number;
+  ticket_id: number | null;
+  kind: 'ticket' | 'outage';
+  token_hash: string;
+  status: HandoffStatus;
+  summary: string;
+  last_message: string | null;
+  reminded: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface BotRequest {
   id: number;
   user_id: number;
@@ -401,6 +416,36 @@ export class Repo {
 
   closeWatchesForTicket(ticketId: number) {
     this.run('UPDATE watches SET done = 1 WHERE ticket_id = ?', ticketId);
+  }
+
+  // ---------- Hermes handoffs ----------
+
+  createHandoff(h: Pick<Handoff, 'ticket_id' | 'kind' | 'token_hash' | 'summary'>) {
+    const res = this.run('INSERT INTO handoffs (ticket_id, kind, token_hash, summary) VALUES (?, ?, ?, ?)', h.ticket_id, h.kind, h.token_hash, h.summary);
+    return this.get<Handoff>('SELECT * FROM handoffs WHERE id = ?', Number(res.lastInsertRowid))!;
+  }
+
+  getHandoffByToken(tokenHash: string) {
+    return this.get<Handoff>('SELECT * FROM handoffs WHERE token_hash = ?', tokenHash);
+  }
+
+  updateHandoff(id: number, patch: Partial<Pick<Handoff, 'status' | 'last_message' | 'reminded'>>) {
+    const keys = Object.keys(patch) as (keyof typeof patch)[];
+    if (!keys.length) return;
+    const sets = keys.map((k) => `${k} = ?`).join(', ');
+    // A reminder doesn't count as news from Hermes.
+    const touch = keys.some((k) => k !== 'reminded') ? ", updated_at = datetime('now')" : '';
+    this.run(`UPDATE handoffs SET ${sets}${touch} WHERE id = ?`, ...keys.map((k) => patch[k] ?? null), id);
+    bus.emitEvent({ type: 'activity', userId: null });
+  }
+
+  handoffsForTicket(ticketId: number) {
+    return this.all<Handoff>('SELECT * FROM handoffs WHERE ticket_id = ? ORDER BY id DESC', ticketId);
+  }
+
+  /** Handed off and still waiting for Hermes' result. */
+  openHandoffs() {
+    return this.all<Handoff>("SELECT * FROM handoffs WHERE status IN ('sent', 'working') ORDER BY id");
   }
 
   // ---------- action log / kv ----------

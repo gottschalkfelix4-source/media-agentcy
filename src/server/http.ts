@@ -6,6 +6,7 @@ import { Hono } from 'hono';
 import QRCode from 'qrcode';
 import type { App } from '../app.js';
 import { createApi } from './api.js';
+import { hermesCallback } from '../agent/hermes.js';
 import { WebAuth } from './auth.js';
 import type { WhatsAppClient } from '../whatsapp/client.js';
 
@@ -22,6 +23,7 @@ function findWebDir() {
  *   GET  /health                 – liveness + WhatsApp state
  *   GET  /qr?token=…             – WhatsApp login QR code as a plain page
  *   POST /webhook/seerr?token=…  – Jellyseerr/Overseerr webhook → triggers an immediate notification check
+ *   POST /webhook/hermes         – status reports from the Hermes Agent (Bearer = per-handoff token)
  */
 export function createHttpApp(deps: { app: App; whatsapp?: WhatsAppClient; version: string }) {
   const { app, whatsapp } = deps;
@@ -52,6 +54,14 @@ export function createHttpApp(deps: { app: App; whatsapp?: WhatsAppClient; versi
     return c.json({ ok: true });
   });
 
+  web.post('/webhook/hermes', async (c) => {
+    const raw = await c.req.json().catch(() => undefined);
+    const r = await hermesCallback(app.ctx, c.req.header('authorization'), raw);
+    if (r.status === 401) logger.warn('Hermes-Rückmeldung mit unbekanntem Token abgelehnt');
+    if (r.recheck) setTimeout(() => void app.poller.runOnce(), 5000);
+    return c.json(r.body, r.status as 200);
+  });
+
   web.route('/api', createApi({ app, auth, whatsapp, startedAt: new Date(), version: deps.version }));
   web.all('/api/*', (c) => c.json({ error: 'not found' }, 404));
 
@@ -79,6 +89,6 @@ export function startHttpServer(deps: { app: App; whatsapp?: WhatsAppClient; ver
   const { config, logger } = deps.app.ctx;
   const web = createHttpApp(deps);
   return serve({ fetch: web.fetch, port: config.HTTP_PORT }, () =>
-    logger.info(`Web-Oberfläche: http://<host>:${config.HTTP_PORT}  (API, /health, /qr, /webhook/seerr)`),
+    logger.info(`Web-Oberfläche: http://<host>:${config.HTTP_PORT}  (API, /health, /qr, /webhook/seerr, /webhook/hermes)`),
   );
 }

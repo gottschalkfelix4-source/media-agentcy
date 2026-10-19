@@ -87,6 +87,13 @@ const schema = z.object({
   STUCK_REQUEST_DAYS: int(3),
   OUTAGE_DETECTION: bool(true),
 
+  HERMES_WEBHOOK_URL: url,
+  HERMES_WEBHOOK_SECRET: optStr,
+  HERMES_CALLBACK_URL: url,
+  HERMES_MIN_SEVERITY: z.enum(['low', 'normal', 'high', 'critical']).default('high'),
+  HERMES_OUTAGES: bool(true),
+  HERMES_TIMEOUT_HOURS: int(6),
+
   NOTIFY_POLL_MINUTES: int(5),
   NOTIFY_STYLE: z.enum(['ai', 'template']).default('ai'),
   DIGEST_ENABLED: bool(false),
@@ -147,7 +154,7 @@ export function buildConfig(source: Record<string, string | undefined>): { ok: t
   if (c.llm.provider === 'custom' && !c.llm.baseUrl) {
     return { ok: false, error: 'LLM_PROVIDER=custom braucht LLM_BASE_URL (OpenAI-kompatibler Endpoint, z.B. http://ollama:11434/v1)' };
   }
-  for (const k of ['DEBOUNCE_MS', 'HISTORY_LIMIT', 'SUMMARIZE_AFTER', 'MAX_TOOL_ROUNDS', 'REQUESTS_PER_DAY', 'MESSAGES_PER_DAY', 'TOKENS_PER_DAY', 'MAX_MESSAGE_CHARS', 'OFF_TOPIC_LIMIT', 'NOTIFY_POLL_MINUTES', 'AUTOFIX_MAX_REPLACEMENTS_PER_DAY', 'STUCK_REQUEST_DAYS', 'DIGEST_HOUR', 'VOICE_MAX_SECONDS'] as const) {
+  for (const k of ['DEBOUNCE_MS', 'HISTORY_LIMIT', 'SUMMARIZE_AFTER', 'MAX_TOOL_ROUNDS', 'REQUESTS_PER_DAY', 'MESSAGES_PER_DAY', 'TOKENS_PER_DAY', 'MAX_MESSAGE_CHARS', 'OFF_TOPIC_LIMIT', 'NOTIFY_POLL_MINUTES', 'AUTOFIX_MAX_REPLACEMENTS_PER_DAY', 'STUCK_REQUEST_DAYS', 'DIGEST_HOUR', 'VOICE_MAX_SECONDS', 'HERMES_TIMEOUT_HOURS'] as const) {
     if (!Number.isFinite(c[k]) || c[k] < 0) return { ok: false, error: `${k} muss eine Zahl ≥ 0 sein` };
   }
   if (c.DIGEST_HOUR > 23) return { ok: false, error: 'DIGEST_HOUR muss zwischen 0 und 23 liegen' };

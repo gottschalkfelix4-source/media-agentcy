@@ -270,3 +270,13 @@ test('maintenance notice: set by the admin, answered without LLM, all-clear when
   assert.match(lastTo(u.wa_id), /Wartung ist vorbei/);
   assert.match(lastTo(ADMIN), /Wartungshinweis ist abgelaufen/);
 });
+
+test('server name is declined after "für" and "auf", proper names stay', async () => {
+  const { serverName } = await import('../src/agent/serverName.js');
+  assert.equal(serverName('unser Mediaserver', 'akk'), 'unseren Mediaserver');
+  assert.equal(serverName('unser Mediaserver', 'dat'), 'unserem Mediaserver');
+  assert.equal(serverName('unsere Mediathek', 'dat'), 'unserer Mediathek');
+  assert.equal(serverName('Der Kinokeller', 'akk'), 'Den Kinokeller');
+  assert.equal(serverName('Felix-Kino', 'akk'), 'Felix-Kino');
+  assert.equal(serverName('Unser Kino', 'dat'), 'Unserem Kino');
+});

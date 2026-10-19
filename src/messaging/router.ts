@@ -4,6 +4,7 @@ import { notifyAdmins, userLabel, type AppContext } from '../agent/context.js';
 import type { User } from '../db/repo.js';
 import { bus } from '../events.js';
 import { pingAll } from '../integrations/index.js';
+import { serverName } from '../agent/serverName.js';
 import type { ImageInput } from '../llm/index.js';
 import { disruptionNotice } from '../notifier/outage.js';
 import { sttConfig, transcribe } from '../llm/transcribe.js';
@@ -97,7 +98,7 @@ export class Router {
         repo.addMessage(user.id, 'user', msg.text);
         await this.send(
           user,
-          `Hi${msg.pushName ? ' ' + msg.pushName : ''}! 👋 Ich bin ${config.BOT_NAME}, der Assistent für ${config.SERVER_NAME}. Ich kenne deine Nummer noch nicht – ich habe ${config.ADMIN_NAME} Bescheid gegeben, dass du Zugang möchtest. Sobald du freigeschaltet bist, melde ich mich!`,
+          `Hi${msg.pushName ? ' ' + msg.pushName : ''}! 👋 Ich bin ${config.BOT_NAME}, der Assistent für ${serverName(config.SERVER_NAME, 'akk')}. Ich kenne deine Nummer noch nicht – ich habe ${config.ADMIN_NAME} Bescheid gegeben, dass du Zugang möchtest. Sobald du freigeschaltet bist, melde ich mich!`,
         );
         await notifyAdmins(
           this.ctx,

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { serverName } from './serverName.js';
 import type { User } from '../db/repo.js';
 import { notifyAdmins, userLabel, type AppContext } from './context.js';
 import { defineTool } from './tool.js';
@@ -48,7 +49,7 @@ export function blockedBy(ctx: AppContext, user: User): LimitReason | undefined 
 export function limitNotice(ctx: AppContext, reason: LimitReason) {
   const { BOT_NAME, SERVER_NAME, ADMIN_NAME } = ctx.config;
   if (reason === 'off_topic') {
-    return `🙅 Ich bin ${BOT_NAME} und nur für ${SERVER_NAME} da: Filme und Serien anfragen, Probleme melden, Fragen zu den Apps. Weil zuletzt mehrmals ganz andere Themen kamen, mache ich jetzt bis zu 24 Stunden Pause. Bei einem echten Problem wende dich direkt an ${ADMIN_NAME}.`;
+    return `🙅 Ich bin ${BOT_NAME} und nur für ${serverName(SERVER_NAME, 'akk')} da: Filme und Serien anfragen, Probleme melden, Fragen zu den Apps. Weil zuletzt mehrmals ganz andere Themen kamen, mache ich jetzt bis zu 24 Stunden Pause. Bei einem echten Problem wende dich direkt an ${ADMIN_NAME}.`;
   }
   return `⏸️ Für heute ist mein Gesprächskontingent mit dir aufgebraucht. Ab morgen bin ich wieder da. Bei einem dringenden Problem wende dich direkt an ${ADMIN_NAME}.`;
 }

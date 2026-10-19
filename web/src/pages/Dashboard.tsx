@@ -130,13 +130,18 @@ function MaintenanceCard() {
   );
 }
 
+/** pingAll reports "ok" or "ok (v10.10.3)" when the service tells its version, otherwise "FEHLER: …". */
+const serviceOk = (s: string) => s === 'ok' || s.startsWith('ok (');
+const serviceVersion = (s: string) => s.match(/^ok \((v[^)]+)\)/)?.[1];
+
 function ServicesCard() {
   const q = useQuery({ queryKey: ['services'], queryFn: () => api<Record<string, string>>('/services'), refetchInterval: 60_000 });
   const refresh = useMutation({
     mutationFn: () => api<Record<string, string>>('/services?refresh=1'),
     onSuccess: (data) => {
       q.refetch();
-      toast(Object.values(data).every((v) => v === 'ok') ? 'Alle Dienste erreichbar' : 'Mindestens ein Dienst hat ein Problem', Object.values(data).every((v) => v === 'ok') ? 'ok' : 'danger');
+      const allOk = Object.values(data).every(serviceOk);
+      toast(allOk ? 'Alle Dienste erreichbar' : 'Mindestens ein Dienst hat ein Problem', allOk ? 'ok' : 'danger');
     },
     onError: toastError,
   });
@@ -162,10 +167,10 @@ function ServicesCard() {
         <ul className="space-y-2">
           {entries.map(([name, status]) => (
             <li key={name} className="flex items-center gap-2.5 text-[13px]">
-              <Dot tone={status === 'ok' ? 'ok' : 'danger'} />
+              <Dot tone={serviceOk(status) ? 'ok' : 'danger'} />
               <span className="font-medium">{SERVICE_NAMES[name] ?? name}</span>
               <span className="ml-auto truncate text-xs text-fg-3" title={status}>
-                {status === 'ok' ? 'erreichbar' : status}
+                {serviceOk(status) ? ['erreichbar', serviceVersion(status)].filter(Boolean).join(' · ') : status}
               </span>
             </li>
           ))}

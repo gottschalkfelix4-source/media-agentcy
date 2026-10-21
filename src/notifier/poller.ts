@@ -8,6 +8,7 @@ import { checkDisruptions } from './outage.js';
 import { checkStuckRequests } from './stuck.js';
 import { checkStaleHandoffs } from '../agent/hermes.js';
 import { resolveRequestTickets } from '../agent/tickets.js';
+import type { OmbiTvRequest } from '../integrations/ombi.js';
 
 const WATCH_TIMEOUT_HOURS = 72;
 const AVAILABLE = 5;
@@ -166,7 +167,7 @@ export class Poller {
   private async ombiStatus(
     r: BotRequest,
     movies: () => Promise<{ theMovieDbId: number; title: string; available: boolean }[]>,
-    tv: () => Promise<{ title: string; childRequests?: { available: boolean }[] }[]>,
+    tv: () => Promise<OmbiTvRequest[]>,
   ) {
     if (r.media_type === 'movie') {
       const m = (await movies()).find((x) => x.theMovieDbId === r.tmdb_id || normalizeTitle(x.title) === normalizeTitle(r.title));
@@ -175,7 +176,7 @@ export class Poller {
     const t = (await tv()).find((x) => normalizeTitle(x.title) === normalizeTitle(r.title));
     if (!t?.childRequests?.length) return undefined;
     if (t.childRequests.every((c) => c.available)) return AVAILABLE;
-    if (t.childRequests.some((c) => c.available)) return PARTIAL;
+    if (t.childRequests.some((c) => c.available || c.seasonRequests?.some((se) => se.episodes?.some((e) => e.available)))) return PARTIAL;
     return undefined;
   }
 

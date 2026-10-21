@@ -22,7 +22,14 @@ export interface OmbiTvRequest {
   title: string;
   tvDbId?: number;
   externalProviderId?: number;
-  childRequests?: { id: number; available: boolean; approved: boolean; denied?: boolean; requestedUser?: { userName?: string } }[];
+  childRequests?: {
+    id: number;
+    available: boolean;
+    approved: boolean;
+    denied?: boolean;
+    requestedUser?: { userName?: string };
+    seasonRequests?: { seasonNumber?: number; episodes?: { episodeNumber?: number; available?: boolean }[] }[];
+  }[];
 }
 
 export class OmbiClient {

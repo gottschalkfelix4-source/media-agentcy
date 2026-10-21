@@ -81,3 +81,25 @@ test('a request that finished just now is imported as waiting so the user still 
   assert.equal(r.notified_at, null);
   assert.ok(app.repo.pendingBotRequests().some((b) => b.id === r.id));
 });
+
+test('Ombi series requested on the website: first episodes trigger the partial notice, matched via the Jellyfin name', async () => {
+  const mia = app.repo.createUser('4915100000022', { status: 'active', display_name: 'Mia' });
+  app.repo.updateUser(mia.id, { jellyfin_username: 'mia' });
+  app.ctx.services.seerr = undefined; // only Ombi here
+  const episodes = [{ episodeNumber: 1, available: false }, { episodeNumber: 2, available: false }];
+  app.ctx.services.ombi = {
+    movieRequests: async () => [],
+    tvRequests: async () => [
+      { id: 30, title: 'Ombi-Serie', externalProviderId: 900, childRequests: [{ id: 31, available: false, approved: true, requestedUser: { userName: 'MIA' }, seasonRequests: [{ seasonNumber: 1, episodes }] }] },
+    ],
+  } as never;
+  await app.poller.runOnce();
+  const r = app.repo.botRequestsForUser(mia.id).find((b) => b.external_id === 'tv:31')!;
+  assert.ok(r, 'imported via Jellyfin name');
+  assert.equal(app.repo.wasNotified('partial', String(r.id), mia.id), false, 'nothing there yet');
+
+  episodes[0].available = true;
+  await app.poller.runOnce();
+  assert.equal(app.repo.wasNotified('partial', String(r.id), mia.id), true, 'first episode → partial notice');
+  assert.equal(app.repo.botRequestsForUser(mia.id).find((b) => b.external_id === 'tv:31')!.notified_at, null, 'not done yet');
+});

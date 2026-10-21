@@ -223,8 +223,18 @@ export class Repo {
     return this.all<User>("SELECT * FROM users WHERE seerr_user_id = ? AND status = 'active'", seerrId);
   }
 
+  /**
+   * Users behind an Ombi request. A stored Ombi name wins; users without one are matched by their Jellyfin/Plex
+   * name (Ombi users often sign in with those accounts).
+   */
   usersByOmbiName(name: string) {
-    return this.all<User>("SELECT * FROM users WHERE lower(ombi_username) = lower(?) AND status = 'active'", name);
+    const exact = this.all<User>("SELECT * FROM users WHERE lower(ombi_username) = lower(?) AND status = 'active'", name);
+    if (exact.length) return exact;
+    return this.all<User>(
+      "SELECT * FROM users WHERE ombi_username IS NULL AND (lower(jellyfin_username) = lower(?) OR lower(plex_username) = lower(?)) AND status = 'active'",
+      name,
+      name,
+    );
   }
 
   // ---------- messages / memory ----------

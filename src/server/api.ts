@@ -19,7 +19,7 @@ import type { WhatsAppClient } from '../whatsapp/client.js';
 import { SESSION_COOKIE, type WebAuth } from './auth.js';
 import { syncRequests } from '../notifier/requestSync.js';
 import { getMaintenance, getOutage, setMaintenance } from '../notifier/outage.js';
-import { mergeAccounts, normalizePhone, type MediaAccountLists } from './userImport.js';
+import { mergeAccounts, missingLinks, normalizePhone, type MediaAccountLists } from './userImport.js';
 
 export interface ApiDeps {
   app: App;
@@ -513,11 +513,17 @@ export function createApi(deps: ApiDeps) {
       plex && plex.users().then((l) => (lists.plex = l), (err) => errors.push(`Plex: ${errText(err)}`)),
       seerr && seerr.users().then((l) => (lists.seerr = l), (err) => errors.push(`Jellyseerr: ${errText(err)}`)),
     ]);
-    return c.json({
-      sources: { jellyfin: !!jellyfin, plex: !!plex, seerr: !!seerr },
-      candidates: mergeAccounts(lists, repo.listUsers()),
-      errors,
-    });
+    const users = repo.listUsers();
+    const candidates = mergeAccounts(lists, users);
+    // Known users get the accounts they are still missing (e.g. Jellyfin for users imported from Plex).
+    const linked: string[] = [];
+    for (const { userId, patch } of missingLinks(candidates, users)) {
+      repo.updateUser(userId, patch);
+      repo.logAction(userId, null, 'web_user_linked', patch);
+      const u = repo.getUser(userId)!;
+      linked.push(u.display_name ?? u.push_name ?? `+${u.wa_id}`);
+    }
+    return c.json({ sources: { jellyfin: !!jellyfin, plex: !!plex, seerr: !!seerr }, candidates, linked, errors });
   });
 
   api.post('/user-import', async (c) => {

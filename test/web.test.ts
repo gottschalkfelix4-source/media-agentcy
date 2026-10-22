@@ -107,6 +107,23 @@ test('settings: secrets are not exposed, changes apply live, null resets to env'
   assert.equal(config.BOT_NAME, 'EnvBot');
 });
 
+test('settings: removing a media server switches it off without a restart', async () => {
+  await req('PUT', '/settings', { values: { PLEX_URL: 'http://plex:32400', PLEX_TOKEN: 'plex-token' } });
+  assert.ok(app.ctx.services.plex);
+
+  // Reset to env (no env value) and clearing the field both have to remove it from the live config.
+  await req('PUT', '/settings', { values: { PLEX_URL: null, PLEX_TOKEN: null } });
+  assert.equal(config.PLEX_URL, undefined);
+  assert.equal(config.PLEX_TOKEN, undefined);
+  assert.equal(app.ctx.services.plex, undefined);
+  assert.equal((await req('GET', '/user-import/candidates')).json.sources.plex, false);
+
+  await req('PUT', '/settings', { values: { PLEX_URL: 'http://plex:32400', PLEX_TOKEN: 'plex-token' } });
+  await req('PUT', '/settings', { values: { PLEX_URL: '' } });
+  assert.equal(app.ctx.services.plex, undefined);
+  await req('PUT', '/settings', { values: { PLEX_URL: null, PLEX_TOKEN: null } });
+});
+
 test('users: create, direct message, takeover keeps the bot quiet', async () => {
   const created = await req('POST', '/users', { phone: '+49 151 0000 0002', display_name: 'Max' });
   assert.equal(created.status, 200);
@@ -172,6 +189,40 @@ test('user import: candidates from the media servers, create and link with phone
 
     const again = await req('GET', '/user-import/candidates');
     assert.equal(again.json.candidates.find((c: any) => c.jellyfin?.name === 'lena').existing.id, u.id);
+  } finally {
+    app.ctx.services.jellyfin = undefined;
+    app.ctx.services.seerr = undefined;
+  }
+});
+
+test('user import: users imported from Plex get their Jellyfin account linked once Plex is gone', async () => {
+  const plexOnly = app.repo.createUser('4915100000020', { display_name: 'Bitbube', plex_username: 'Bitbube', status: 'active' });
+  const other = app.repo.createUser('4915100000021', { plex_username: 'routerronny', jellyfin_username: 'ronny', status: 'active' });
+  app.ctx.services.jellyfin = {
+    users: async () => [
+      { id: 'jf-bb', name: 'bitbube', admin: false, disabled: false },
+      { id: 'jf-rr', name: 'routerronny', admin: false, disabled: false },
+      { id: 'jf-new', name: 'neuling', admin: false, disabled: false },
+    ],
+  } as never;
+  app.ctx.services.seerr = { users: async () => [{ id: 9, displayName: 'Bitbube', jellyfinUsername: 'bitbube' }] } as never;
+  try {
+    const cand = await req('GET', '/user-import/candidates');
+    assert.equal(cand.status, 200);
+    assert.deepEqual(cand.json.linked, ['Bitbube']);
+    const bb = cand.json.candidates.find((c: any) => c.jellyfin?.name === 'bitbube');
+    assert.equal(bb.existing.id, plexOnly.id);
+    assert.equal(cand.json.candidates.find((c: any) => c.jellyfin?.name === 'neuling').existing, undefined);
+
+    const u = app.repo.getUser(plexOnly.id)!;
+    assert.equal(u.jellyfin_user_id, 'jf-bb');
+    assert.equal(u.jellyfin_username, 'bitbube');
+    assert.equal(u.seerr_user_id, 9);
+    // Already linked to another Jellyfin account: left alone.
+    assert.equal(app.repo.getUser(other.id)!.jellyfin_user_id, null);
+    assert.equal(app.repo.getUser(other.id)!.jellyfin_username, 'ronny');
+
+    assert.deepEqual((await req('GET', '/user-import/candidates')).json.linked, []);
   } finally {
     app.ctx.services.jellyfin = undefined;
     app.ctx.services.seerr = undefined;

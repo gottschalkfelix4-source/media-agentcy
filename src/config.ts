@@ -174,5 +174,8 @@ if (!initial.ok) {
 export const config: Config = initial.config;
 
 export function replaceConfig(next: Config) {
+  // Unset optional values are missing from `next` entirely, so drop them explicitly –
+  // otherwise a removed setting (e.g. PLEX_URL) would keep its old value until a restart.
+  for (const k of Object.keys(config)) if (!(k in next)) delete (config as Record<string, unknown>)[k];
   Object.assign(config, next);
 }

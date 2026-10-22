@@ -1,4 +1,4 @@
-import type { User } from '../db/repo.js';
+import type { User, UserPatch } from '../db/repo.js';
 
 /** Accounts as the integrations return them (only the fields the import needs). */
 export interface MediaAccountLists {
@@ -53,15 +53,44 @@ export function mergeAccounts(lists: MediaAccountLists, users: User[]): ImportCa
 
   return drafts
     .map(({ aliases: _, ...c }) => {
-      const u = users.find(
-        (u) =>
-          (c.jellyfin && (u.jellyfin_user_id === c.jellyfin.id || norm(u.jellyfin_username) === norm(c.jellyfin.name))) ||
-          (c.plex && norm(u.plex_username) === norm(c.plex.username)) ||
-          (c.seerr && u.seerr_user_id === c.seerr.id),
-      );
+      const u = findLinkedUser(c, users);
       return u ? { ...c, existing: { id: u.id, name: u.display_name ?? u.push_name ?? `+${u.wa_id}`, wa_id: u.wa_id } } : c;
     })
     .sort((a, b) => Number(!!a.existing) - Number(!!b.existing) || a.name.localeCompare(b.name, 'de'));
+}
+
+/**
+ * The bot user behind a candidate: same account id, or the same user name on Jellyfin or Plex
+ * (like the merge above, equal names count as the same person across servers). This also finds
+ * users that were only linked to Plex once Plex is gone and just their Jellyfin account is left.
+ */
+function findLinkedUser(c: ImportCandidate, users: User[]) {
+  const names = new Set([c.jellyfin?.name, c.plex?.username].map(norm).filter(Boolean));
+  return (
+    users.find((u) => (c.jellyfin && u.jellyfin_user_id === c.jellyfin.id) || (c.seerr && u.seerr_user_id === c.seerr.id)) ??
+    users.find((u) => [u.jellyfin_username, u.plex_username].some((n) => names.has(norm(n))))
+  );
+}
+
+/**
+ * Account links a known bot user is still missing (e.g. users imported from Plex who also have a
+ * Jellyfin account). Only fills empty fields and skips accounts another user already has.
+ */
+export function missingLinks(candidates: ImportCandidate[], users: User[]): { userId: number; patch: Pick<UserPatch, 'jellyfin_user_id' | 'jellyfin_username' | 'seerr_user_id'> }[] {
+  const out: ReturnType<typeof missingLinks> = [];
+  for (const c of candidates) {
+    const u = c.existing && users.find((x) => x.id === c.existing!.id);
+    if (!u) continue;
+    const others = users.filter((x) => x.id !== u.id);
+    const patch: (typeof out)[number]['patch'] = {};
+    if (c.jellyfin && !u.jellyfin_user_id && !u.jellyfin_username && !others.some((x) => x.jellyfin_user_id === c.jellyfin!.id || norm(x.jellyfin_username) === norm(c.jellyfin!.name))) {
+      patch.jellyfin_user_id = c.jellyfin.id;
+      patch.jellyfin_username = c.jellyfin.name;
+    }
+    if (c.seerr && u.seerr_user_id == null && !others.some((x) => x.seerr_user_id === c.seerr!.id)) patch.seerr_user_id = c.seerr.id;
+    if (Object.keys(patch).length) out.push({ userId: u.id, patch });
+  }
+  return out;
 }
 
 /**

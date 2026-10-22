@@ -18,6 +18,8 @@ interface Candidate {
 interface CandidatesResponse {
   sources: { jellyfin: boolean; plex: boolean; seerr: boolean };
   candidates: Candidate[];
+  /** Known users whose missing Jellyfin/Seerr accounts were just linked. */
+  linked: string[];
   errors: string[];
 }
 
@@ -43,7 +45,18 @@ function phoneProblem(raw: string) {
 type Filter = 'new' | 'all';
 
 export function UserImportPage() {
-  const q = useQuery({ queryKey: ['user-import'], queryFn: () => api<CandidatesResponse>('/user-import/candidates'), staleTime: 60_000 });
+  const q = useQuery({
+    queryKey: ['user-import'],
+    queryFn: async () => {
+      const d = await api<CandidatesResponse>('/user-import/candidates');
+      if (d.linked?.length) {
+        toast(`Konten nachgetragen für ${d.linked.join(', ')}`);
+        void queryClient.invalidateQueries({ queryKey: ['users'] });
+      }
+      return d;
+    },
+    staleTime: 60_000,
+  });
   const [filter, setFilter] = useState<Filter>('new');
   const [search, setSearch] = useState('');
   const [phones, setPhones] = useState<Record<string, string>>({});

@@ -1,11 +1,14 @@
 import type { AppContext } from '../agent/context.js';
-import type { User } from '../db/repo.js';
+import type { BotRequest, User } from '../db/repo.js';
+import { normalizeTitle } from '../integrations/http.js';
+import type { OmbiMovieRequest, OmbiTvRequest } from '../integrations/ombi.js';
 
 /**
  * Imports requests made on the Jellyseerr/Overseerr or Ombi website into bot_requests, assigned to the
  * bot user whose linked accounts made them. They show up under "Anfragen" in the web UI, the agent's
  * my_requests/check_request see them, and the poller notifies when a waiting one becomes available.
- * Requests that are already available are stored as done (no notification), declined ones are skipped.
+ * Requests that are already available are stored as done (no notification), declined ones are skipped,
+ * waiting ones that were deleted in Ombi are removed again.
  */
 
 const AVAILABLE = 5;
@@ -15,6 +18,8 @@ export interface SyncResult {
   imported: number;
   /** Requests whose requester is not linked to any bot user. */
   unmatched: number;
+  /** Waiting requests that no longer exist on the website (Ombi). */
+  removed: number;
   errors: string[];
 }
 
@@ -50,7 +55,7 @@ const FRESH_MS = 2 * 3_600_000;
  */
 export async function syncRequests(ctx: AppContext, opts: { full?: boolean } = {}): Promise<SyncResult> {
   const { repo, services, logger } = ctx;
-  const result: SyncResult = { imported: 0, unmatched: 0, errors: [] };
+  const result: SyncResult = { imported: 0, unmatched: 0, removed: 0, errors: [] };
   const firstSync = !repo.getKv('requests_synced');
   const fresh = (iso?: string) => !firstSync && !!iso && Date.now() - Date.parse(iso) < FRESH_MS;
   const match = matcher(repo.listUsers('active'));
@@ -98,13 +103,16 @@ export async function syncRequests(ctx: AppContext, opts: { full?: boolean } = {
   if (services.ombi) {
     const ombi = services.ombi;
     try {
-      for (const m of await ombi.movieRequests()) {
+      const movies = await ombi.movieRequests();
+      const tv = await ombi.tvRequests();
+      result.removed += removeDeletedOmbi(ctx, movies, tv);
+      for (const m of movies) {
         if (m.denied) continue;
         const users = match.ombi(m.requestedUser?.userName);
         if (!users.length) result.unmatched++;
         for (const u of users) add(u, { source: 'ombi', key: `movie:${m.id}`, tmdbId: m.theMovieDbId || null, type: 'movie', title: m.title, available: m.available, at: m.requestedDate });
       }
-      for (const t of await ombi.tvRequests()) {
+      for (const t of tv) {
         for (const c of t.childRequests ?? []) {
           if (c.denied) continue;
           const users = match.ombi(c.requestedUser?.userName);
@@ -118,6 +126,37 @@ export async function syncRequests(ctx: AppContext, opts: { full?: boolean } = {
   }
 
   repo.setKv('requests_synced', new Date().toISOString());
-  if (result.imported) logger.info({ ...result }, 'Anfragen von der Webseite übernommen');
+  if (result.imported || result.removed) logger.info({ ...result }, 'Anfragen von der Webseite abgeglichen');
   return result;
+}
+
+/** Just requested via the bot → Ombi may not list it yet, leave it alone. */
+const GRACE_MS = 10 * 60_000;
+
+/**
+ * Waiting Ombi requests that were removed in Ombi (by the admin or the user) are dropped here, otherwise they
+ * stay "wartend" forever and end up as hanging requests. Website imports carry Ombi's own id ("movie:7",
+ * "tv:31" = child request), bot requests only reliably the TMDB id and title. Finished ones stay as history.
+ */
+function removeDeletedOmbi(ctx: AppContext, movies: OmbiMovieRequest[], tv: OmbiTvRequest[]) {
+  const { repo } = ctx;
+  const movieIds = new Set(movies.map((m) => m.id));
+  const childIds = new Set(tv.flatMap((t) => (t.childRequests ?? []).map((c) => c.id)));
+  const titles = new Set([...movies, ...tv].map((x) => normalizeTitle(x.title)));
+  const tmdb = { movie: new Set(movies.map((m) => m.theMovieDbId)), tv: new Set(tv.map((t) => t.externalProviderId)) };
+
+  const exists = (b: BotRequest) => {
+    const [kind, id] = b.external_id?.split(':') ?? [];
+    if (kind === 'movie' && id) return movieIds.has(Number(id));
+    if (kind === 'tv' && id) return childIds.has(Number(id));
+    return (!!b.tmdb_id && tmdb[b.media_type].has(b.tmdb_id)) || titles.has(normalizeTitle(b.title));
+  };
+
+  let removed = 0;
+  for (const b of repo.pendingBotRequests()) {
+    if (b.source !== 'ombi' || Date.now() - Date.parse(`${b.created_at.replace(' ', 'T')}Z`) < GRACE_MS || exists(b)) continue;
+    repo.deleteBotRequest(b);
+    removed++;
+  }
+  return removed;
 }

@@ -391,6 +391,11 @@ export class Repo {
     return this.all<BotRequest>('SELECT * FROM bot_requests WHERE user_id = ? ORDER BY id DESC LIMIT ?', userId, limit);
   }
 
+  deleteBotRequest(r: Pick<BotRequest, 'id' | 'user_id'>) {
+    this.run('DELETE FROM bot_requests WHERE id = ?', r.id);
+    bus.emitEvent({ type: 'request', userId: r.user_id });
+  }
+
   markBotRequestNotified(id: number) {
     this.run("UPDATE bot_requests SET notified_at = datetime('now') WHERE id = ?", id);
   }

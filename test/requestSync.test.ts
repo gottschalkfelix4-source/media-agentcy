@@ -54,7 +54,7 @@ test('requests are assigned via Seerr id or media server name, finished ones are
   );
 
   const r = await syncRequests(app.ctx, { full: true });
-  assert.deepEqual(r, { imported: 3, unmatched: 1, errors: [] });
+  assert.deepEqual(r, { imported: 3, unmatched: 1, removed: 0, errors: [] });
 
   const lenas = app.repo.botRequestsForUser(lena.id);
   const done = lenas.find((b) => b.external_id === '1')!;
@@ -102,4 +102,23 @@ test('Ombi series requested on the website: first episodes trigger the partial n
   await app.poller.runOnce();
   assert.equal(app.repo.wasNotified('partial', String(r.id), mia.id), true, 'first episode → partial notice');
   assert.equal(app.repo.botRequestsForUser(mia.id).find((b) => b.external_id === 'tv:31')!.notified_at, null, 'not done yet');
+});
+
+test('waiting Ombi requests deleted in Ombi disappear, finished ones and fresh bot requests stay', async () => {
+  const mia = app.repo.getUserByWaId('4915100000022')!;
+  const before = '2026-01-10 12:00:00';
+  app.repo.addBotRequest({ user_id: mia.id, source: 'ombi', external_id: 'movie:40', tmdb_id: 400, media_type: 'movie', title: 'Gelöschter Film', via: 'web', created_at: before });
+  app.repo.addBotRequest({ user_id: mia.id, source: 'ombi', external_id: 'movie:41', tmdb_id: 401, media_type: 'movie', title: 'Fertiger Film', via: 'web', created_at: before, notified_at: before });
+  app.repo.addBotRequest({ user_id: mia.id, source: 'ombi', external_id: '12', tmdb_id: 402, media_type: 'movie', title: 'Bot-Film', created_at: before });
+  app.repo.addBotRequest({ user_id: mia.id, source: 'ombi', external_id: null, tmdb_id: 403, media_type: 'tv', title: 'Gelöschte Bot-Serie', created_at: before });
+  app.repo.addBotRequest({ user_id: mia.id, source: 'ombi', external_id: null, tmdb_id: 404, media_type: 'movie', title: 'Gerade angefragt' });
+  app.ctx.services.ombi = {
+    movieRequests: async () => [{ id: 50, title: 'Bot-Film', theMovieDbId: 402, available: false, approved: true, requestedDate: old }],
+    tvRequests: async () => [], // the Ombi-Serie (tv:31) is gone too, but was imported just now → grace period
+  } as never;
+
+  const r = await syncRequests(app.ctx);
+  assert.equal(r.removed, 2);
+  const left = app.repo.botRequestsForUser(mia.id).map((b) => b.title).sort();
+  assert.deepEqual(left, ['Bot-Film', 'Fertiger Film', 'Gerade angefragt', 'Ombi-Serie']);
 });

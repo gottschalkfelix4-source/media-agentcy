@@ -19,10 +19,14 @@ export function RequestsPage() {
   }, [q.data, filter, search]);
   const waiting = (q.data ?? []).filter((r) => !r.notified_at).length;
   const sync = useMutation({
-    mutationFn: () => api<{ imported: number; unmatched: number; errors: string[] }>('/requests/sync', { body: {} }),
+    mutationFn: () => api<{ imported: number; unmatched: number; removed: number; errors: string[] }>('/requests/sync', { body: {} }),
     onSuccess: (r) => {
+      const parts = [
+        r.imported && `${r.imported} Anfrage${r.imported === 1 ? '' : 'n'} übernommen`,
+        r.removed && `${r.removed} in Ombi gelöschte entfernt`,
+      ].filter(Boolean);
       toast(
-        `${r.imported ? `${r.imported} Anfrage${r.imported === 1 ? '' : 'n'} übernommen` : 'Nichts Neues'}${r.unmatched ? ` · ${r.unmatched} ohne verknüpften Nutzer` : ''}`,
+        `${parts.join(' · ') || 'Nichts Neues'}${r.unmatched ? ` · ${r.unmatched} ohne verknüpften Nutzer` : ''}`,
         r.errors.length ? 'info' : 'ok',
       );
       for (const e of r.errors) toastError(new Error(e));

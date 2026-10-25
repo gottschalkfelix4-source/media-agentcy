@@ -78,7 +78,7 @@
 Im Unraid-Webinterface oben rechts das Terminal öffnen (`>_`) und ausführen:
 
 ```bash
-wget -O /boot/config/plugins/dockerMan/templates-user/my-media-agentcy.xml https://git.felix-cloud.net/root/media-agentcy/-/raw/master/unraid/media-agentcy.xml
+wget -O /boot/config/plugins/dockerMan/templates-user/my-media-agentcy.xml https://raw.githubusercontent.com/gottschalkfelix4-source/media-agentcy/master/unraid/media-agentcy.xml
 ```
 
 ### 2. Container anlegen
@@ -135,7 +135,7 @@ Verknüpfte Konten lohnen sich: Anfragen laufen dann im Namen des Nutzers, Anfra
 Im Docker-Tab **Check for Updates** → **apply update**. Oder im Terminal:
 
 ```bash
-docker pull registry.felix-cloud.net/root/media-agentcy:latest
+docker pull ghcr.io/gottschalkfelix4-source/media-agentcy:latest
 ```
 
 …und den Container danach im Docker-Tab neu erstellen lassen (Container anklicken → *Edit* → *Apply*). Daten und WhatsApp-Login bleiben erhalten.
@@ -207,7 +207,7 @@ Damit Hermes etwas reparieren kann, braucht er Zugriff auf den Server (z. B. SSH
 Ohne Unraid-Template, auf jedem Docker-Host:
 
 ```bash
-docker run -d --name media-agentcy --restart unless-stopped -p 8085:8080 -v /mnt/user/appdata/media-agentcy:/data -e TZ=Europe/Berlin registry.felix-cloud.net/root/media-agentcy:latest
+docker run -d --name media-agentcy --restart unless-stopped -p 8085:8080 -v /mnt/user/appdata/media-agentcy:/data -e TZ=Europe/Berlin ghcr.io/gottschalkfelix4-source/media-agentcy:latest
 ```
 
 Oder als `docker-compose.yml`:
@@ -215,7 +215,7 @@ Oder als `docker-compose.yml`:
 ```yaml
 services:
   media-agentcy:
-    image: registry.felix-cloud.net/root/media-agentcy:latest
+    image: ghcr.io/gottschalkfelix4-source/media-agentcy:latest
     container_name: media-agentcy
     restart: unless-stopped
     ports:
@@ -331,14 +331,18 @@ npm run screenshots
 **Image bauen und in die Registry schieben:**
 
 ```bash
-docker login registry.felix-cloud.net
-docker buildx build --provenance=false --sbom=false --build-arg VERSION=0.1.0 --output type=registry,oci-mediatypes=false -t registry.felix-cloud.net/root/media-agentcy:latest -t registry.felix-cloud.net/root/media-agentcy:0.1.0 .
+gh auth refresh -s write:packages
+gh auth token | docker login ghcr.io -u gottschalkfelix4-source --password-stdin
+docker buildx build --platform linux/amd64 --provenance=false --sbom=false --build-arg VERSION=0.1.0 --output type=registry,oci-mediatypes=false -t ghcr.io/gottschalkfelix4-source/media-agentcy:latest -t ghcr.io/gottschalkfelix4-source/media-agentcy:0.1.0 .
 ```
 
-Der Befehl baut und pusht in einem Schritt. Die Optionen sind nötig:
+Der Login ist nur einmal nötig. Der Build-Befehl baut und pusht in einem Schritt. Die Optionen sind nötig:
 
-- `--provenance=false --sbom=false`: Sonst lehnt die GitLab-Registry die Attestation-Manifeste von Docker Desktop mit „blob unknown“ ab.
+- `--platform linux/amd64`: Unraid läuft auf x86. Ohne die Angabe entsteht auf einem Mac mit Apple-Chip ein arm64-Image, das dort nicht startet.
+- `--provenance=false --sbom=false`: Keine Attestation-Manifeste. Sonst pusht Docker Desktop einen Manifest-Index statt eines einfachen Image-Manifests.
 - `oci-mediatypes=false`: Pusht ein klassisches Docker-Manifest statt OCI. Der Update-Check von Unraid fragt nur nach Docker-Manifesten und zeigt bei OCI-Images „not available“.
+
+Ein neues Paket auf ghcr.io ist zuerst privat. Damit Unraid es ohne Login ziehen kann, auf GitHub unter Packages → media-agentcy → Package settings die Sichtbarkeit auf „Public“ stellen.
 
 ### Struktur
 

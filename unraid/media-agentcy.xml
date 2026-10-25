@@ -1,14 +1,14 @@
 <?xml version="1.0"?>
 <Container version="2">
   <Name>media-agentcy</Name>
-  <Repository>registry.felix-cloud.net/root/media-agentcy:latest</Repository>
-  <Registry>https://git.felix-cloud.net/root/media-agentcy/container_registry</Registry>
+  <Repository>ghcr.io/gottschalkfelix4-source/media-agentcy:latest</Repository>
+  <Registry>https://github.com/gottschalkfelix4-source/media-agentcy/pkgs/container/media-agentcy</Registry>
   <Network>bridge</Network>
   <MyIP/>
   <Shell>bash</Shell>
   <Privileged>false</Privileged>
-  <Support>https://git.felix-cloud.net/root/media-agentcy/-/issues</Support>
-  <Project>https://git.felix-cloud.net/root/media-agentcy</Project>
+  <Support>https://github.com/gottschalkfelix4-source/media-agentcy/issues</Support>
+  <Project>https://github.com/gottschalkfelix4-source/media-agentcy</Project>
   <Overview>WhatsApp-KI-Assistent für die Nutzer deines Jellyfin-/Plex-Servers. Nimmt Medienwünsche entgegen (Jellyseerr/Overseerr/Ombi), benachrichtigt, sobald etwas verfügbar ist, diagnostiziert Wiedergabeprobleme und behebt kleine Medienfehler selbst (Sonarr/Radarr). Größere Probleme eskaliert er per WhatsApp an dich. Jeder Nutzer hat sein eigenes Gedächtnis.&#xD;
 &#xD;
 Mit Web-Admin-Oberfläche: Nutzer freischalten, Chats mitlesen und übernehmen, Tickets, Token-Verbrauch und alle Einstellungen. Alles außer Port und Datenordner lässt sich nach dem Start in der Oberfläche einstellen, die Felder hier sind optional.&#xD;
@@ -16,8 +16,8 @@ Mit Web-Admin-Oberfläche: Nutzer freischalten, Chats mitlesen und übernehmen, 
 Beim ersten Start ohne WEB_PASSWORD steht das Login-Passwort im Container-Log. Danach in der Oberfläche unter "WhatsApp" den QR-Code mit dem Bot-Handy scannen.</Overview>
   <Category>MediaServer:Other Tools: Productivity:</Category>
   <WebUI>http://[IP]:[PORT:8080]/</WebUI>
-  <TemplateURL>https://git.felix-cloud.net/root/media-agentcy/-/raw/master/unraid/media-agentcy.xml</TemplateURL>
-  <Icon>https://git.felix-cloud.net/root/media-agentcy/-/raw/master/unraid/icon.png</Icon>
+  <TemplateURL>https://raw.githubusercontent.com/gottschalkfelix4-source/media-agentcy/master/unraid/media-agentcy.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/gottschalkfelix4-source/media-agentcy/master/unraid/icon.png</Icon>
   <ExtraParams>--restart=unless-stopped</ExtraParams>
   <PostArgs/>
   <CPUset/>

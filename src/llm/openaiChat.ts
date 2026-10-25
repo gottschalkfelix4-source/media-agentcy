@@ -25,7 +25,7 @@ export class OpenAIChatProvider implements LLMProvider {
     };
     const temperature = req.temperature ?? this.opts.temperature;
     if (temperature !== undefined) body.temperature = temperature;
-    if (req.tools?.length) {
+    if (req.tools?.length && req.toolChoice !== 'none') {
       body.tools = req.tools.map((t) => ({
         type: 'function',
         function: { name: t.name, description: t.description, parameters: t.parameters },

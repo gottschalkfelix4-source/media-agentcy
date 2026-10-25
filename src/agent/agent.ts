@@ -79,7 +79,7 @@ export class Agent {
         const text = res.content?.trim();
         return text || '🤔 Dazu fällt mir gerade nichts ein – kannst du es anders formulieren?';
       }
-      messages.push({ role: 'assistant', content: res.content, toolCalls: res.toolCalls });
+      messages.push({ role: 'assistant', content: res.content, toolCalls: res.toolCalls, raw: res.raw });
       for (const call of res.toolCalls) {
         logger.info({ user: user.id, tool: call.name, args: call.arguments.slice(0, 300) }, 'Tool-Aufruf');
         const output = await executeTool(tools, call.name, call.arguments, toolCtx);
@@ -90,7 +90,8 @@ export class Agent {
 
     // Too many tool rounds: ask the model for a final answer without tools.
     messages.push({ role: 'user', content: `${EVENT_PREFIX} Tool-Limit erreicht. Fasse für den Nutzer zusammen, was du bisher herausgefunden/gemacht hast.` });
-    const final = await this.complete(user.id, kind, { messages, model });
+    // Tools stay defined (the history contains tool calls, and changing them would break caching), just not usable.
+    const final = await this.complete(user.id, kind, { messages, tools: specs, toolChoice: 'none', model });
     return final.content?.trim() || 'Ich hänge gerade fest – ich gebe dem Admin Bescheid.';
   }
 

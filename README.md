@@ -38,7 +38,7 @@
 | 🧠 **Gedächtnis pro Nutzer** | Fakten (Geräte, Vorlieben …), laufende Zusammenfassung früherer Gespräche, Ticket- und Anfrageverlauf |
 | 👥 **Nutzer-Import** | Konten aus Jellyfin, Plex und Jellyseerr auf einen Blick, zusammengeführt pro Person. WhatsApp-Nummer eintragen, importieren, fertig verknüpft |
 | 🖥️ **Web-Oberfläche** | Nutzer freischalten, Chats mitlesen und übernehmen, Tickets, Token-Verbrauch, alle Einstellungen live, am Handy und am Desktop |
-| 🔌 **KI frei wählbar** | OpenRouter, OpenAI, ChatGPT-Login (experimentell) oder jeder OpenAI-kompatible Endpoint (Ollama, LM Studio, LiteLLM …) |
+| 🔌 **KI frei wählbar** | OpenRouter, OpenAI, Anthropic Claude, ChatGPT-Login (experimentell) oder jeder OpenAI-kompatible Endpoint (Ollama, LM Studio, LiteLLM …) |
 
 ## Screenshots
 
@@ -200,6 +200,7 @@ Damit Hermes etwas reparieren kann, braucht er Zugriff auf den Server (z. B. SSH
 | Ombi | Einstellungen → Ombi → API-Key |
 | Sonarr / Radarr | Settings → General → API Key |
 | OpenRouter | [openrouter.ai/keys](https://openrouter.ai/keys), Modelle mit Tool-Calling: [Liste](https://openrouter.ai/models?supported_parameters=tools) |
+| Anthropic | API-Key von [platform.claude.com](https://platform.claude.com/) (ein Claude-Pro/Max-Abo lässt sich laut Anthropic nicht in fremden Apps nutzen). Standardmodell `claude-opus-5-5`, Prompt-Caching automatisch. |
 
 ## docker run / docker compose
 
@@ -346,7 +347,7 @@ src/
   agent/        Agent-Schleife, Prompts, Nutzer- & Admin-Tools
   db/           SQLite-Schema + Repository
   integrations/ Jellyfin, Plex, Jellyseerr/Overseerr, Ombi, Sonarr, Radarr
-  llm/          OpenAI-kompatibel (OpenRouter/OpenAI/custom) + ChatGPT/Codex
+  llm/          OpenAI-kompatibel (OpenRouter/OpenAI/custom), Anthropic (Messages API) + ChatGPT/Codex
   messaging/    Router: Onboarding, Zugriff, Debounce, Warteschlangen
   notifier/     Poller: fertige Anfragen, Auto-Fix-Follow-up
   whatsapp/     Baileys-Client (QR-Login, LID→Telefonnummer, Bilder)

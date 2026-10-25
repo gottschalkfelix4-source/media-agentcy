@@ -20,6 +20,7 @@
     "screenshots": "tsx scripts/screenshots.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.3.0",
     "@hono/node-server": "^2.1.5",
     "baileys": "^7.0.0-rc14",
     "hono": "^4.13.13",

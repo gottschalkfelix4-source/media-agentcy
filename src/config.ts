@@ -43,10 +43,10 @@ const schema = z.object({
   ONBOARD_JELLYFIN: bool(false),
   ONBOARD_GUIDE: optStr,
 
-  LLM_PROVIDER: z.enum(['openrouter', 'openai', 'chatgpt', 'custom']).default('openrouter'),
+  LLM_PROVIDER: z.enum(['openrouter', 'openai', 'anthropic', 'chatgpt', 'custom']).default('openrouter'),
   LLM_BASE_URL: url,
   LLM_API_KEY: optStr,
-  LLM_MODEL: z.string().default('openai/gpt-4.1-mini'),
+  LLM_MODEL: optStr,
   LLM_MODEL_ADMIN: optStr,
   LLM_TEMPERATURE: z
     .string()
@@ -120,12 +120,23 @@ type Env = z.output<typeof schema>;
 const defaultBaseUrl: Record<Env['LLM_PROVIDER'], string | undefined> = {
   openrouter: 'https://openrouter.ai/api/v1',
   openai: 'https://api.openai.com/v1',
+  anthropic: undefined, // the SDK's default (https://api.anthropic.com)
   chatgpt: 'https://chatgpt.com/backend-api/codex',
   custom: undefined,
 };
 
+/** Used when LLM_MODEL is empty. */
+export const DEFAULT_MODEL: Record<Env['LLM_PROVIDER'], string> = {
+  openrouter: 'openai/gpt-4.1-mini',
+  openai: 'openai/gpt-4.1-mini',
+  anthropic: 'claude-opus-5-5',
+  chatgpt: 'openai/gpt-4.1-mini',
+  custom: 'openai/gpt-4.1-mini',
+};
+
 function derive(env: Env) {
   const dataDir = path.resolve(env.DATA_DIR);
+  const model = env.LLM_MODEL ?? DEFAULT_MODEL[env.LLM_PROVIDER];
   return {
     ...env,
     dataDir,
@@ -135,8 +146,8 @@ function derive(env: Env) {
       provider: env.LLM_PROVIDER,
       baseUrl: env.LLM_BASE_URL ?? defaultBaseUrl[env.LLM_PROVIDER],
       apiKey: env.LLM_API_KEY,
-      model: env.LLM_MODEL,
-      adminModel: env.LLM_MODEL_ADMIN ?? env.LLM_MODEL,
+      model,
+      adminModel: env.LLM_MODEL_ADMIN ?? model,
       temperature: env.LLM_TEMPERATURE,
       vision: env.LLM_VISION,
       chatgptAuthFile: env.CHATGPT_AUTH_FILE ?? path.join(dataDir, 'codex-auth.json'),

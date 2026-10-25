@@ -36,7 +36,7 @@ export class ChatGPTCodexProvider implements LLMProvider {
       model: req.model ?? this.opts.model,
       instructions,
       input,
-      tools: (req.tools ?? []).map((t) => ({
+      tools: (req.toolChoice === 'none' ? [] : (req.tools ?? [])).map((t) => ({
         type: 'function',
         name: t.name,
         description: t.description,

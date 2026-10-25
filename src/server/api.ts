@@ -819,6 +819,8 @@ export function createApi(deps: ApiDeps) {
     const { llm } = preview.config;
     if (llm.provider === 'chatgpt') return c.json({ models: ['gpt-5', 'gpt-5-codex', 'gpt-5-mini'], note: 'Beim ChatGPT-Login gibt es keine Modell-Liste – das sind übliche Namen.' });
     try {
+      const provider = createProvider(preview.config);
+      if (provider.listModels) return c.json({ models: (await provider.listModels()).sort() });
       const res = await fetch(`${llm.baseUrl}/models`, { headers: llm.apiKey ? { authorization: `Bearer ${llm.apiKey}` } : {}, signal: AbortSignal.timeout(15_000) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = (await res.json()) as { data?: { id: string; supported_parameters?: string[] }[] };

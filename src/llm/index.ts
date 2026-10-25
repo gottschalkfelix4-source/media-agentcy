@@ -1,4 +1,5 @@
 import type { Config } from '../config.js';
+import { AnthropicProvider } from './anthropic.js';
 import { ChatGPTCodexProvider } from './chatgptCodex.js';
 import { OpenAIChatProvider } from './openaiChat.js';
 import type { LLMProvider } from './types.js';
@@ -8,6 +9,8 @@ export * from './types.js';
 export function createProvider(config: Config): LLMProvider {
   const { llm } = config;
   switch (llm.provider) {
+    case 'anthropic':
+      return new AnthropicProvider({ apiKey: llm.apiKey, baseUrl: llm.baseUrl, model: llm.model });
     case 'chatgpt':
       return new ChatGPTCodexProvider({ baseUrl: llm.baseUrl!, authFile: llm.chatgptAuthFile, model: llm.model });
     case 'openrouter':

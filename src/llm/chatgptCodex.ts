@@ -23,6 +23,8 @@ interface CodexAuthFile {
 export class ChatGPTCodexProvider implements LLMProvider {
   readonly name = 'chatgpt';
   private readonly sessionId = randomUUID();
+  /** Parallel calls (several users, the summarizer) must share one refresh: the refresh token may be single-use. */
+  private refreshing?: Promise<CodexAuthFile>;
 
   constructor(
     private readonly opts: { baseUrl: string; authFile: string; model: string },
@@ -98,7 +100,12 @@ export class ChatGPTCodexProvider implements LLMProvider {
     return auth;
   }
 
-  private async refresh(): Promise<CodexAuthFile> {
+  private refresh(): Promise<CodexAuthFile> {
+    this.refreshing ??= this.doRefresh().finally(() => (this.refreshing = undefined));
+    return this.refreshing;
+  }
+
+  private async doRefresh(): Promise<CodexAuthFile> {
     const auth = this.readAuth();
     const res = await fetch(TOKEN_URL, {
       method: 'POST',
@@ -109,6 +116,7 @@ export class ChatGPTCodexProvider implements LLMProvider {
         refresh_token: auth.tokens!.refresh_token,
         scope: 'openid profile email',
       }),
+      signal: AbortSignal.timeout(30_000),
     });
     if (!res.ok) throw new LLMError(`ChatGPT Token-Refresh fehlgeschlagen (${res.status}). Bitte neu einloggen.`, res.status);
     const data = (await res.json()) as { access_token: string; refresh_token?: string; id_token?: string };

@@ -33,21 +33,31 @@ export class OpenAIChatProvider implements LLMProvider {
       body.tool_choice = 'auto';
     }
 
-    const res = await fetchWithRetry(`${this.opts.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        ...(this.opts.apiKey ? { authorization: `Bearer ${this.opts.apiKey}` } : {}),
-        ...this.opts.extraHeaders,
+    const res = await fetchWithRetry(
+      `${this.opts.baseUrl}/chat/completions`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          ...(this.opts.apiKey ? { authorization: `Bearer ${this.opts.apiKey}` } : {}),
+          ...this.opts.extraHeaders,
+        },
+        body: JSON.stringify(body),
       },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(this.opts.timeoutMs ?? 120_000),
-    });
+      3,
+      this.opts.timeoutMs ?? 120_000,
+    );
 
     const text = await res.text();
     if (!res.ok) throw new LLMError(`${this.name} HTTP ${res.status}: ${text.slice(0, 500)}`, res.status);
 
-    const data = JSON.parse(text) as {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      throw new LLMError(`${this.name}: keine JSON-Antwort (falsche Endpoint-URL?): ${text.slice(0, 200)}`);
+    }
+    const data = parsed as {
       choices?: { message?: { content?: string | null; tool_calls?: { id: string; function: { name: string; arguments: string } }[] } }[];
       usage?: { prompt_tokens?: number; completion_tokens?: number };
       error?: { message?: string };
@@ -100,11 +110,12 @@ function toWire(m: ChatMessage): Record<string, unknown> {
   }
 }
 
-export async function fetchWithRetry(url: string, init: RequestInit, attempts = 3): Promise<Response> {
+/** Each attempt gets its own timeout – a shared AbortSignal would make every retry after a timeout fail at once. */
+export async function fetchWithRetry(url: string, init: RequestInit, attempts = 3, timeoutMs?: number): Promise<Response> {
   let lastErr: unknown;
   for (let i = 0; i < attempts; i++) {
     try {
-      const res = await fetch(url, init);
+      const res = await fetch(url, timeoutMs ? { ...init, signal: AbortSignal.timeout(timeoutMs) } : init);
       if ((res.status === 429 || res.status >= 500) && i < attempts - 1) {
         await sleep(1000 * 2 ** i);
         continue;

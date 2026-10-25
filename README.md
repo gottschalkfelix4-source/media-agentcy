@@ -252,7 +252,7 @@ docker compose up -d --build
 Ein in der Oberfläche gesetzter Wert hat Vorrang vor Umgebungsvariablen. „Zurücksetzen“ an einem Feld nimmt wieder den Wert aus der Umgebung bzw. den Standard. API-Keys gibt die Oberfläche nie zurück, sie zeigt nur die letzten vier Zeichen.
 
 > [!IMPORTANT]
-> Die Oberfläche ist fürs Heimnetz gedacht. Von außen nur über VPN oder einen Reverse Proxy mit HTTPS erreichbar machen.
+> Die Oberfläche ist fürs Heimnetz gedacht. Von außen nur über VPN oder einen Reverse Proxy mit HTTPS erreichbar machen. Hinter einem Proxy `TRUST_PROXY=true` setzen, damit Login-Sperre und sichere Cookies die echte Client-Adresse bzw. HTTPS erkennen.
 
 ### Beispiele im Admin-Chat
 

@@ -214,7 +214,8 @@ async function findInDownloader(ctx: ToolContext, type: MediaType, tmdbId: numbe
   const { radarr, sonarr } = ctx.services;
   if (type === 'movie') {
     if (!radarr) return undefined;
-    const m = (await radarr.find({ tmdbId }))[0] ?? (await radarr.find({ title }))[0];
+    // Radarr always knows the tmdbId, so a title hit with another id is a different movie (e.g. "Dune" for "Dune: Part Two").
+    const m = (await radarr.find({ tmdbId }))[0] ?? (await radarr.find({ title })).find((x) => !x.tmdbId || x.tmdbId === tmdbId);
     return m ? { kind: 'radarr' as const, id: m.radarrId, movie: m } : null;
   }
   if (!sonarr) return undefined;

@@ -2,13 +2,16 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
+import { getCookie } from 'hono/cookie';
 import QRCode from 'qrcode';
 import type { App } from '../app.js';
 import { createApi } from './api.js';
 import { hermesCallback } from '../agent/hermes.js';
-import { WebAuth } from './auth.js';
+import { SESSION_COOKIE, WebAuth, safeEqual } from './auth.js';
 import type { WhatsAppClient } from '../whatsapp/client.js';
+
+const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
 
 /** Built web UI: dist/web next to the compiled server, or after `npm run build:web` when running from src. */
 function findWebDir() {
@@ -21,7 +24,7 @@ function findWebDir() {
  *   /api/*                       – web UI API (password login)
  *   /                            – web UI
  *   GET  /health                 – liveness + WhatsApp state
- *   GET  /qr?token=…             – WhatsApp login QR code as a plain page
+ *   GET  /qr?token=…             – WhatsApp login QR code as a plain page (token or web session)
  *   POST /webhook/seerr?token=…  – Jellyseerr/Overseerr webhook → triggers an immediate notification check
  *   POST /webhook/hermes         – status reports from the Hermes Agent (Bearer = per-handoff token)
  */
@@ -32,19 +35,23 @@ export function createHttpApp(deps: { app: App; whatsapp?: WhatsAppClient; versi
   auth.init();
 
   const web = new Hono();
-  const tokenOk = (c: { req: { query(k: string): string | undefined; header(k: string): string | undefined } }) =>
-    !config.HTTP_TOKEN || c.req.query('token') === config.HTTP_TOKEN || c.req.header('authorization') === `Bearer ${config.HTTP_TOKEN}`;
+  const tokenMatches = (c: Context) => {
+    const given = c.req.query('token') ?? c.req.header('authorization')?.replace(/^Bearer /, '');
+    return !!config.HTTP_TOKEN && !!given && safeEqual(given, config.HTTP_TOKEN);
+  };
+  const tokenOk = (c: Context) => !config.HTTP_TOKEN || tokenMatches(c);
 
   web.get('/health', (c) => c.json({ ok: true, whatsapp: whatsapp?.state ?? 'disabled' }));
 
+  // Whoever scans this QR first owns the bot's WhatsApp, so it needs the token or a web login – never open.
   web.get('/qr', async (c) => {
-    if (!tokenOk(c)) return c.text('unauthorized', 401);
+    if (!tokenMatches(c) && !auth.validSession(getCookie(c, SESSION_COOKIE))) return c.text('unauthorized – erst in der Web-Oberfläche anmelden oder ?token=… anhängen', 401);
     const qr = whatsapp?.latestQr;
     const content = qr
       ? `<img src="${await QRCode.toDataURL(qr, { width: 360, margin: 2 })}" alt="QR"><p>WhatsApp → Verknüpfte Geräte → Gerät hinzufügen. Seite lädt alle 10 s neu.</p>`
-      : `<p>Status: <b>${whatsapp?.state ?? 'deaktiviert'}</b>${whatsapp?.state === 'open' ? ' – bereits verbunden ✅' : ' – noch kein QR-Code, Seite lädt neu…'}</p>`;
+      : `<p>Status: <b>${escapeHtml(whatsapp?.state ?? 'deaktiviert')}</b>${whatsapp?.state === 'open' ? ' – bereits verbunden ✅' : ' – noch kein QR-Code, Seite lädt neu…'}</p>`;
     return c.html(
-      `<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="10"><title>${config.BOT_NAME} Login</title><body style="font-family:sans-serif;text-align:center;padding:2rem"><h2>${config.BOT_NAME} – WhatsApp Login</h2>${content}</body>`,
+      `<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="10"><title>${escapeHtml(config.BOT_NAME)} Login</title><body style="font-family:sans-serif;text-align:center;padding:2rem"><h2>${escapeHtml(config.BOT_NAME)} – WhatsApp Login</h2>${content}</body>`,
     );
   });
 

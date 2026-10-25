@@ -148,7 +148,7 @@ export class Poller {
         const d = await seerr.details(r.media_type, r.tmdb_id).catch(() => undefined);
         status = d?.mediaInfo?.status;
       } else if (r.source === 'ombi' && ombi) {
-        status = await this.ombiStatus(r, async () => (ombiMovies ??= await ombi.movieRequests()), async () => (ombiTv ??= await ombi.tvRequests()));
+        status = await this.ombiStatus(r, async () => (ombiMovies ??= await ombi.movieRequests()), async () => (ombiTv ??= await ombi.tvRequests())).catch(() => undefined);
       }
       if (status === AVAILABLE) {
         resolveRequestTickets(this.ctx.repo, r.user_id, { tmdbId: r.tmdb_id, title: r.title });
@@ -170,7 +170,9 @@ export class Poller {
     tv: () => Promise<OmbiTvRequest[]>,
   ) {
     if (r.media_type === 'movie') {
-      const m = (await movies()).find((x) => x.theMovieDbId === r.tmdb_id || normalizeTitle(x.title) === normalizeTitle(r.title));
+      // tmdb first: an older request for a remake with the same title must not count.
+      const list = await movies();
+      const m = r.tmdb_id ? list.find((x) => x.theMovieDbId === r.tmdb_id) : list.find((x) => normalizeTitle(x.title) === normalizeTitle(r.title));
       return m?.available ? AVAILABLE : undefined;
     }
     const t = (await tv()).find((x) => normalizeTitle(x.title) === normalizeTitle(r.title));
@@ -250,10 +252,15 @@ export class Poller {
     for (const w of repo.openWatches()) {
       const ref = JSON.parse(w.ref) as { movieId?: number; seriesId?: number; episodeIds?: number[] };
       let done = false;
-      if (w.kind === 'radarr_movie' && radarr && ref.movieId) {
-        done = (await radarr.get(ref.movieId)).hasFile;
-      } else if (w.kind === 'sonarr_episodes' && sonarr && ref.seriesId && ref.episodeIds) {
-        done = await sonarr.episodesHaveFiles(ref.seriesId, ref.episodeIds);
+      try {
+        if (w.kind === 'radarr_movie' && radarr && ref.movieId) {
+          done = (await radarr.get(ref.movieId)).hasFile;
+        } else if (w.kind === 'sonarr_episodes' && sonarr && ref.seriesId && ref.episodeIds) {
+          done = await sonarr.episodesHaveFiles(ref.seriesId, ref.episodeIds);
+        }
+      } catch (err) {
+        // E.g. the movie was removed from Radarr. Don't let one watch stop the others; it still expires below.
+        this.ctx.logger.warn({ err, watch: w.id }, 'Watch-Prüfung fehlgeschlagen');
       }
 
       if (done) {

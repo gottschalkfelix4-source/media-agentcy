@@ -83,6 +83,16 @@ export interface RecentItem {
   added: string;
 }
 
+/**
+ * One URL path segment from an id. Ids often come from the model (tool arguments), and `new URL()` resolves
+ * "../" – so "../System/Shutdown?x=" would otherwise reach a different endpoint with the admin key.
+ */
+export function seg(id: string | number) {
+  const s = String(id);
+  if (!/^[A-Za-z0-9_-]+$/.test(s)) throw new Error(`Ungültige ID: ${s.slice(0, 40)}`);
+  return s;
+}
+
 export function normalizeTitle(s: string) {
   return s
     .toLowerCase()

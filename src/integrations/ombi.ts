@@ -1,4 +1,4 @@
-import { ApiClient } from './http.js';
+import { ApiClient, seg } from './http.js';
 import { TMDB_POSTER, type MediaCard } from './seerr.js';
 
 /**
@@ -67,7 +67,7 @@ export class OmbiClient {
       banner?: string;
       overview?: string;
       seasonRequests?: unknown[];
-    }>(mediaType === 'movie' ? `/v2/Search/movie/${tmdbId}` : `/v2/Search/tv/moviedb/${tmdbId}`);
+    }>(mediaType === 'movie' ? `/v2/Search/movie/${seg(tmdbId)}` : `/v2/Search/tv/moviedb/${seg(tmdbId)}`);
     const poster = d?.posterPath;
     return {
       title: d?.title ?? `TMDB ${tmdbId}`,

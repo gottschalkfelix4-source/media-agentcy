@@ -75,15 +75,17 @@ function SettingField({
   const disabled = def.readOnly;
   const src = SOURCE[edited ? (d === null ? (def.envValue ? 'env' : 'default') : 'ui') : def.source];
   const canReset = !def.readOnly && ((def.source === 'ui' && !edited) || (edited && d !== null));
-  const set = (v: string) => setDraft(def.key, v === (def.value ?? '') && !edited ? undefined : v);
+  // Typing the saved value back drops the draft, so an env value doesn't get pinned as a UI override.
+  const set = (v: string) => setDraft(def.key, v === (def.value ?? '') ? undefined : v);
 
   let control;
   switch (def.type) {
     case 'bool': {
       const on = (value || def.default || 'false') === 'true';
+      const saved = (def.value || def.default || 'false') === 'true';
       control = (
         <div className="flex h-9 items-center">
-          <Toggle checked={on} disabled={disabled} label={def.label} onChange={(v) => setDraft(def.key, String(v))} />
+          <Toggle checked={on} disabled={disabled} label={def.label} onChange={(v) => setDraft(def.key, v === saved ? undefined : String(v))} />
           <span className="ml-2 text-[13px] text-fg-2">{on ? 'An' : 'Aus'}</span>
         </div>
       );

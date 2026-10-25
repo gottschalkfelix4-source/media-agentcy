@@ -1,4 +1,4 @@
-import { ApiClient, type RecentItem } from './http.js';
+import { ApiClient, type RecentItem, seg } from './http.js';
 
 interface JfMediaStream {
   Type: string;
@@ -90,7 +90,7 @@ export class JellyfinClient {
   }
 
   async episodes(seriesId: string, season?: number) {
-    const res = await this.api.get<{ Items: JfItem[] }>(`/Shows/${seriesId}/Episodes`, {
+    const res = await this.api.get<{ Items: JfItem[] }>(`/Shows/${seg(seriesId)}/Episodes`, {
       season,
       Fields: 'Path,MediaSources',
     });
@@ -98,7 +98,7 @@ export class JellyfinClient {
   }
 
   async refreshItem(id: string) {
-    await this.api.post(`/Items/${id}/Refresh`, undefined, {
+    await this.api.post(`/Items/${seg(id)}/Refresh`, undefined, {
       Recursive: true,
       MetadataRefreshMode: 'FullRefresh',
       ImageRefreshMode: 'FullRefresh',

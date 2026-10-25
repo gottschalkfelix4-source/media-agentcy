@@ -8,7 +8,7 @@ import { blockedBy, limitStatus, resetLimits } from '../agent/abuse.js';
 import { userLabel } from '../agent/context.js';
 import { onboardOnApproval, onboardUser } from '../agent/onboarding.js';
 import { handToHermes, hermesEnabled } from '../agent/hermes.js';
-import type { Config } from '../config.js';
+import { config, type Config } from '../config.js';
 import type { TicketStatus, User, UserPatch } from '../db/repo.js';
 import { bus, type AppEvent } from '../events.js';
 import { createServices, enabledServices, pingAll, type Services } from '../integrations/index.js';
@@ -61,6 +61,25 @@ const idParam = (c: Context, name = 'id') => {
   if (!Number.isInteger(n) || n <= 0) throw new HttpError(400, 'Ungültige ID');
   return n;
 };
+
+/**
+ * Address used for the login lockout. X-Forwarded-For is set by the client unless a proxy overwrites it,
+ * so it only counts with TRUST_PROXY – and then only its last hop, the one our own proxy appended.
+ */
+export function clientIp(c: Context, trustProxy: boolean) {
+  const socket = (c.env as { incoming?: { socket?: { remoteAddress?: string } } } | undefined)?.incoming?.socket?.remoteAddress;
+  if (trustProxy) {
+    const hops = c.req.header('x-forwarded-for')?.split(',').map((h) => h.trim()).filter(Boolean);
+    if (hops?.length) return hops[hops.length - 1];
+  }
+  return socket ?? '?';
+}
+
+/** Session cookie options; behind a TLS-terminating proxy the request URL is http:, so trust X-Forwarded-Proto there. */
+function cookieOptions(c: Context, maxAge: number) {
+  const https = c.req.url.startsWith('https:') || (config.TRUST_PROXY && c.req.header('x-forwarded-proto')?.split(',')[0].trim() === 'https');
+  return { httpOnly: true, sameSite: 'Strict' as const, path: '/', maxAge, secure: https };
+}
 
 const errText = (err: unknown) => (err instanceof Error ? err.message : String(err)).slice(0, 300);
 
@@ -150,10 +169,9 @@ export function createApi(deps: ApiDeps) {
 
   api.post('/auth/login', async (c) => {
     const { password } = await body(c, z.object({ password: z.string().min(1) }));
-    const ip = c.req.header('x-forwarded-for')?.split(',')[0].trim() ?? (c.env as { incoming?: { socket?: { remoteAddress?: string } } })?.incoming?.socket?.remoteAddress ?? '?';
-    const res = auth.login(password, ip, c.req.header('user-agent'));
+    const res = await auth.login(password, clientIp(c, ctx.config.TRUST_PROXY), c.req.header('user-agent'));
     if (!res.ok) return c.json({ error: res.error }, 401);
-    setCookie(c, SESSION_COOKIE, res.token, { httpOnly: true, sameSite: 'Strict', path: '/', maxAge: res.maxAge, secure: c.req.url.startsWith('https:') });
+    setCookie(c, SESSION_COOKIE, res.token, cookieOptions(c, res.maxAge));
     return c.json({ ok: true });
   });
 
@@ -176,10 +194,10 @@ export function createApi(deps: ApiDeps) {
 
   api.post('/auth/password', async (c) => {
     const { current, next } = await body(c, z.object({ current: z.string(), next: z.string() }));
-    const err = auth.changePassword(current, next);
+    const err = await auth.changePassword(current, next);
     if (err) throw new HttpError(400, err);
-    const res = auth.login(next, 'local', c.req.header('user-agent'));
-    if (res.ok) setCookie(c, SESSION_COOKIE, res.token, { httpOnly: true, sameSite: 'Strict', path: '/', maxAge: res.maxAge });
+    const res = await auth.login(next, 'local', c.req.header('user-agent'));
+    if (res.ok) setCookie(c, SESSION_COOKIE, res.token, cookieOptions(c, res.maxAge));
     return c.json({ ok: true });
   });
 

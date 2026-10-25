@@ -274,7 +274,15 @@ export const SETTINGS: SettingDef[] = [
     default: 'info',
     options: ['debug', 'info', 'warn', 'error'].map((v) => ({ value: v, label: v })),
   },
-  { key: 'HTTP_TOKEN', group: 'system', label: 'Token für /qr und Webhook', type: 'secret', help: 'Schützt die Webhook-URL (…/webhook/seerr?token=…).' },
+  { key: 'HTTP_TOKEN', group: 'system', label: 'Token für /qr und Webhook', type: 'secret', help: 'Schützt die Webhook-URL (…/webhook/seerr?token=…). /qr geht ohne Token nur mit Web-Login.' },
+  {
+    key: 'TRUST_PROXY',
+    group: 'system',
+    label: 'Hinter Reverse-Proxy',
+    type: 'bool',
+    default: 'false',
+    help: 'Nur einschalten, wenn die Oberfläche ausschließlich über einen Proxy (NPM, Traefik, SWAG …) erreichbar ist. Dann zählen X-Forwarded-For für die Login-Sperre und X-Forwarded-Proto für sichere Cookies.',
+  },
   { key: 'HTTP_PORT', group: 'system', label: 'HTTP-Port', type: 'int', readOnly: true, restart: true, help: 'Nur per Umgebungsvariable änderbar.' },
   { key: 'DATA_DIR', group: 'system', label: 'Datenverzeichnis', type: 'text', readOnly: true, restart: true, help: 'Nur per Umgebungsvariable änderbar.' },
 ];

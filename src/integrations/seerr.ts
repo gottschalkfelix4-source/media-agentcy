@@ -1,4 +1,4 @@
-import { ApiClient } from './http.js';
+import { ApiClient, seg } from './http.js';
 
 /** Works for both Jellyseerr and Overseerr (same API). */
 
@@ -105,7 +105,7 @@ export class SeerrClient {
         seasons?: { seasonNumber: number; status: number }[];
         requests?: { id: number; status: number; createdAt: string; requestedBy?: { id: number } }[];
       };
-    }>(`/${mediaType}/${tmdbId}`, { language });
+    }>(`/${seg(mediaType)}/${seg(tmdbId)}`, { language });
   }
 
   /** What the user sees before confirming a request: title, date, poster. */
@@ -138,17 +138,17 @@ export class SeerrClient {
   }
 
   async userRequests(seerrUserId: number, take = 20) {
-    const res = await this.api.get<{ results: SeerrRequest[] }>(`/user/${seerrUserId}/requests`, { take, skip: 0 });
+    const res = await this.api.get<{ results: SeerrRequest[] }>(`/user/${seg(seerrUserId)}/requests`, { take, skip: 0 });
     return res.results;
   }
 
   async getRequest(id: number) {
-    return this.api.get<SeerrRequest>(`/request/${id}`);
+    return this.api.get<SeerrRequest>(`/request/${seg(id)}`);
   }
 
   /** Sends a failed request to Radarr/Sonarr again. */
   async retryRequest(id: number) {
-    return this.api.post<SeerrRequest>(`/request/${id}/retry`);
+    return this.api.post<SeerrRequest>(`/request/${seg(id)}/retry`);
   }
 
   async recentRequests(filter: 'all' | 'available' | 'processing' | 'pending' = 'all', take = 100) {

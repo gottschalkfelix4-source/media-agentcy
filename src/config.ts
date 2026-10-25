@@ -103,6 +103,7 @@ const schema = z.object({
   HTTP_PORT: int(8080),
   HTTP_TOKEN: optStr,
   WEB_PASSWORD: optStr,
+  TRUST_PROXY: bool(false),
 
   PROMPT_EXTRA: optStr,
 

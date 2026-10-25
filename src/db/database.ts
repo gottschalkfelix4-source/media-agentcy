@@ -157,6 +157,10 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX idx_handoffs_ticket ON handoffs(ticket_id);
   `,
+  `
+  CREATE INDEX idx_action_user ON action_log(user_id, action, created_at);
+  CREATE INDEX idx_action_ticket ON action_log(ticket_id);
+  `,
 ];
 
 export function openDatabase(file: string): DatabaseSync {

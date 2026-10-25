@@ -1,4 +1,4 @@
-import { ApiClient, type RecentItem } from './http.js';
+import { ApiClient, type RecentItem, seg } from './http.js';
 
 interface PlexMetadata {
   ratingKey: string;
@@ -48,13 +48,13 @@ export class PlexClient {
   }
 
   async item(ratingKey: string) {
-    const res = await this.api.get<{ MediaContainer: { Metadata?: PlexMetadata[] } }>(`/library/metadata/${ratingKey}`);
+    const res = await this.api.get<{ MediaContainer: { Metadata?: PlexMetadata[] } }>(`/library/metadata/${seg(ratingKey)}`);
     const m = res.MediaContainer.Metadata?.[0];
     return m ? summarize(m, true) : undefined;
   }
 
   async refreshItem(ratingKey: string) {
-    await this.api.put(`/library/metadata/${ratingKey}/refresh`);
+    await this.api.put(`/library/metadata/${seg(ratingKey)}/refresh`);
   }
 
   /** Movies and episodes added since `since`, newest first (Plex type 1 = movie, 4 = episode). */
@@ -62,7 +62,7 @@ export class PlexClient {
     const sections = (await this.sections()).filter((s) => s.type === 'movie' || s.type === 'show');
     const lists = await Promise.all(
       sections.map((s) =>
-        this.api.get<{ MediaContainer: { Metadata?: PlexMetadata[] } }>(`/library/sections/${s.key}/all`, {
+        this.api.get<{ MediaContainer: { Metadata?: PlexMetadata[] } }>(`/library/sections/${seg(s.key)}/all`, {
           type: s.type === 'movie' ? 1 : 4,
           sort: 'addedAt:desc',
           'X-Plex-Container-Start': 0,
@@ -91,7 +91,7 @@ export class PlexClient {
 
   async scanLibrary(sectionKey?: string) {
     const keys = sectionKey ? [sectionKey] : (await this.sections()).map((s) => s.key);
-    for (const k of keys) await this.api.get(`/library/sections/${k}/refresh`);
+    for (const k of keys) await this.api.get(`/library/sections/${seg(k)}/refresh`);
   }
 
   /**

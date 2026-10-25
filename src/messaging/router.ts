@@ -1,5 +1,5 @@
 import { blockedBy, capLength, handleBlocked } from '../agent/abuse.js';
-import type { Agent } from '../agent/agent.js';
+import { neutralizeEventPrefix, type Agent } from '../agent/agent.js';
 import { notifyAdmins, userLabel, type AppContext } from '../agent/context.js';
 import type { User } from '../db/repo.js';
 import { bus } from '../events.js';
@@ -58,6 +58,7 @@ export class Router {
 
   async onIncoming(msg: IncomingMessage) {
     const { repo, config, logger } = this.ctx;
+    msg = { ...msg, text: neutralizeEventPrefix(msg.text) };
     const isAdminNumber = config.ADMIN_NUMBERS.includes(msg.waId);
     let user = repo.getUserByWaId(msg.waId);
     const isNew = !user;
@@ -112,7 +113,7 @@ export class Router {
       void notifyAdmins(this.ctx, `🆕 Neuer Nutzer (automatisch freigeschaltet): ${userLabel(user)}`);
     }
 
-    if (msg.audio) msg = { ...msg, text: await this.voiceText(user, msg.audio) };
+    if (msg.audio) msg = { ...msg, text: neutralizeEventPrefix(await this.voiceText(user, msg.audio)) };
 
     if (await this.handleCommand(user, msg.text)) return;
     this.buffer(user.id, msg.text, msg.images);
@@ -243,6 +244,7 @@ export class Router {
     const prev = this.chains.get(userId) ?? Promise.resolve();
     const rt = this.runtimeFor(userId);
     if (rt.state === 'working') this.setRuntime(userId, { queued: rt.queued + 1 });
+    // `next` never rejects (see the catch below), so one failing job can't skip every later one for this user.
     const next = prev.then(async () => {
       const user = this.ctx.repo.getUser(userId);
       const started = Date.now();
@@ -261,7 +263,7 @@ export class Router {
         const after = this.runtimeFor(userId);
         if (after.queued === 0 && !this.pending.has(userId)) this.setRuntime(userId, { state: 'idle', since: undefined });
       }
-    });
+    }).catch((err) => this.ctx.logger.error({ err, user: userId }, 'Fehler in der Nachrichten-Warteschlange'));
     this.chains.set(userId, next);
     void next.finally(() => {
       if (this.chains.get(userId) === next) this.chains.delete(userId);

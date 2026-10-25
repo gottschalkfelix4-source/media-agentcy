@@ -1,4 +1,4 @@
-import { ApiClient, formatBytes, titleScore } from './http.js';
+import { ApiClient, formatBytes, titleScore, seg } from './http.js';
 
 interface ArrMediaInfo {
   videoCodec?: string;
@@ -150,7 +150,7 @@ export class RadarrClient extends ArrBase {
 
   async get(id: number) {
     this.cache = undefined;
-    return this.summary(await this.api.get<RadarrMovie>(`/movie/${id}`));
+    return this.summary(await this.api.get<RadarrMovie>(`/movie/${seg(id)}`));
   }
 
   private summary(m: RadarrMovie) {
@@ -173,8 +173,9 @@ export class RadarrClient extends ArrBase {
     };
   }
 
+  // Sonarr has one record per episode, so 100 entries are gone after a few season packs.
   async queue(movieId?: number) {
-    const res = await this.api.get<{ records: QueueRecord[] }>('/queue', { pageSize: 100, includeMovie: false });
+    const res = await this.api.get<{ records: QueueRecord[] }>('/queue', { pageSize: 1000, includeMovie: false });
     return res.records.filter((q) => !movieId || q.movieId === movieId).map(queueInfo);
   }
 
@@ -200,8 +201,8 @@ export class RadarrClient extends ArrBase {
 
   /** Deletes the current file and searches for a new release. */
   async replaceFile(movieId: number) {
-    const movie = await this.api.get<RadarrMovie>(`/movie/${movieId}`);
-    if (movie.movieFile) await this.api.delete(`/moviefile/${movie.movieFile.id}`);
+    const movie = await this.api.get<RadarrMovie>(`/movie/${seg(movieId)}`);
+    if (movie.movieFile) await this.api.delete(`/moviefile/${seg(movie.movieFile.id)}`);
     this.cache = undefined;
     await this.search(movieId);
     return { deletedFile: movie.movieFile?.relativePath ?? null };
@@ -303,7 +304,7 @@ export class SonarrClient extends ArrBase {
   }
 
   async queue(seriesId?: number) {
-    const res = await this.api.get<{ records: QueueRecord[] }>('/queue', { pageSize: 100, includeEpisode: true });
+    const res = await this.api.get<{ records: QueueRecord[] }>('/queue', { pageSize: 1000, includeEpisode: true });
     return res.records.filter((q) => !seriesId || q.seriesId === seriesId).map(queueInfo);
   }
 
@@ -344,7 +345,7 @@ export class SonarrClient extends ArrBase {
   async replaceEpisodeFiles(seriesId: number, episodeIds: number[]) {
     const eps = (await this.episodes(seriesId)).filter((e) => episodeIds.includes(e.id));
     const fileIds = [...new Set(eps.map((e) => e.episodeFileId).filter((id): id is number => !!id))];
-    for (const fid of fileIds) await this.api.delete(`/episodefile/${fid}`);
+    for (const fid of fileIds) await this.api.delete(`/episodefile/${seg(fid)}`);
     await this.searchEpisodes(episodeIds);
     return { deletedFiles: fileIds.length, episodes: eps.map((e) => `S${e.seasonNumber}E${e.episodeNumber}`) };
   }

@@ -8,6 +8,14 @@ import { userTools } from './userTools.js';
 
 export const EVENT_PREFIX = '[SYSTEM-EREIGNIS]';
 
+/**
+ * Users must not be able to fake system events: the prompt tells the model that messages with
+ * EVENT_PREFIX come from the system, and in the history both end up as role "user".
+ */
+export function neutralizeEventPrefix(text: string) {
+  return text.replace(/\[\s*system[\s_-]*ereignis\s*\]/gi, '(vom Nutzer geschrieben: SYSTEM-EREIGNIS)');
+}
+
 type UsageKind = 'message' | 'event' | 'summary' | 'console';
 
 export class Agent {
@@ -93,11 +101,14 @@ export class Agent {
     const { config, repo, logger } = this.ctx;
     if (this.summarizing.has(userId)) return;
     const count = repo.unsummarizedCount(userId);
-    if (count <= config.SUMMARIZE_AFTER) return;
+    // Always keep the newest HISTORY_LIMIT messages unsummarized (also when SUMMARIZE_AFTER is set lower).
+    const n = count - config.HISTORY_LIMIT;
+    if (count <= config.SUMMARIZE_AFTER || n <= 0) return;
     this.summarizing.add(userId);
     try {
       const user = repo.getUser(userId)!;
-      const old = repo.oldestUnsummarized(userId, count - config.HISTORY_LIMIT);
+      const old = repo.oldestUnsummarized(userId, n);
+      if (!old.length) return;
       const facts = repo.listFacts(userId);
       const transcript = old.map((m) => `${m.created_at} ${m.role === 'assistant' ? 'Bot' : m.role === 'event' ? 'System' : 'Nutzer'}: ${m.content}`).join('\n');
       const res = await this.complete(userId, 'summary', {

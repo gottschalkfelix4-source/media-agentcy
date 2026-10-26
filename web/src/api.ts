@@ -267,3 +267,12 @@ export interface WhatsAppInfo {
   connectedSince?: string;
   qr?: string | null;
 }
+
+export interface ChatGPTStatus {
+  connected: boolean;
+  planUsage: boolean;
+  email?: string;
+  registered: boolean;
+  expiresAt?: string;
+  authFile: string;
+}

@@ -121,7 +121,7 @@ const defaultBaseUrl: Record<Env['LLM_PROVIDER'], string | undefined> = {
   openrouter: 'https://openrouter.ai/api/v1',
   openai: 'https://api.openai.com/v1',
   anthropic: undefined, // the SDK's default (https://api.anthropic.com)
-  chatgpt: 'https://chatgpt.com/backend-api/codex',
+  chatgpt: 'https://api.openai.com/v1',
   custom: undefined,
 };
 
@@ -130,7 +130,7 @@ export const DEFAULT_MODEL: Record<Env['LLM_PROVIDER'], string> = {
   openrouter: 'openai/gpt-4.1-mini',
   openai: 'openai/gpt-4.1-mini',
   anthropic: 'claude-opus-5-5',
-  chatgpt: 'openai/gpt-4.1-mini',
+  chatgpt: '', // first model of the signed-in account
   custom: 'openai/gpt-4.1-mini',
 };
 
@@ -150,7 +150,7 @@ function derive(env: Env) {
       adminModel: env.LLM_MODEL_ADMIN ?? model,
       temperature: env.LLM_TEMPERATURE,
       vision: env.LLM_VISION,
-      chatgptAuthFile: env.CHATGPT_AUTH_FILE ?? path.join(dataDir, 'codex-auth.json'),
+      chatgptAuthFile: env.CHATGPT_AUTH_FILE ?? path.join(dataDir, 'chatgpt-auth.json'),
     },
   };
 }

@@ -365,8 +365,8 @@ export function Dashboard() {
           <Card title="Bot">
             <KeyValue
               items={[
-                ['Modell', <span className="font-mono text-xs">{o.bot.llm.model}</span>],
-                ['Admin-Modell', <span className="font-mono text-xs">{o.bot.llm.adminModel}</span>],
+                ['Modell', <span className="font-mono text-xs">{o.bot.llm.model || 'automatisch'}</span>],
+                ['Admin-Modell', <span className="font-mono text-xs">{o.bot.llm.adminModel || 'automatisch'}</span>],
                 ['Anbieter', o.bot.llm.provider],
                 [
                   'WhatsApp',

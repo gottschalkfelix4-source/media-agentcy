@@ -63,7 +63,7 @@ const PROVIDERS = [
   { value: 'openrouter', label: 'OpenRouter' },
   { value: 'openai', label: 'OpenAI (API-Key)' },
   { value: 'anthropic', label: 'Anthropic Claude (API-Key)' },
-  { value: 'chatgpt', label: 'ChatGPT-Login (experimentell)' },
+  { value: 'chatgpt', label: 'ChatGPT-Abo (Sign in with ChatGPT)' },
   { value: 'custom', label: 'Eigener Endpoint (OpenAI-kompatibel)' },
 ];
 
@@ -147,11 +147,11 @@ export const SETTINGS: SettingDef[] = [
   { key: 'STT_MODEL', group: 'voice', label: 'Modell', type: 'text', default: 'whisper-1', help: 'Groq: whisper-large-v3-turbo · OpenAI: whisper-1 oder gpt-4o-mini-transcribe' },
   { key: 'VOICE_MAX_SECONDS', group: 'voice', label: 'Maximale Länge (Sekunden)', type: 'int', default: '120', help: 'Längere Sprachnachrichten werden nicht umgewandelt, der Bot bittet um eine kürzere. 0 = kein Limit.' },
 
-  { key: 'LLM_MODEL', group: 'llm', label: 'Modell', type: 'text', placeholder: 'Standard des Anbieters', help: 'Muss Tool-Calling können. Leer = openai/gpt-4.1-mini, bei Anthropic claude-opus-5-5.' },
+  { key: 'LLM_MODEL', group: 'llm', label: 'Modell', type: 'text', placeholder: 'Standard des Anbieters', help: 'Muss Tool-Calling können. Leer = openai/gpt-4.1-mini, bei Anthropic claude-opus-5-5, beim ChatGPT-Abo das erste Modell des Kontos.' },
   { key: 'LLM_MODEL_ADMIN', group: 'llm', label: 'Modell für den Admin-Chat', type: 'text', help: 'Optional, z. B. ein stärkeres Modell. Leer = wie oben.' },
   { key: 'LLM_TEMPERATURE', group: 'llm', label: 'Temperatur', type: 'float', placeholder: 'Standard des Modells', help: 'Wird bei Anthropic ignoriert (die aktuelle API nimmt keine Temperatur mehr an).' },
   { key: 'LLM_VISION', group: 'llm', label: 'Bilder an das Modell geben', type: 'bool', default: 'true', help: 'Für Screenshots von Fehlermeldungen. Das Modell muss Vision können.' },
-  { key: 'CHATGPT_AUTH_FILE', group: 'llm', label: 'ChatGPT auth.json', type: 'text', placeholder: '/data/codex-auth.json', help: 'Pfad zur auth.json aus „npx @openai/codex login“.' },
+  { key: 'CHATGPT_AUTH_FILE', group: 'llm', label: 'Datei für die ChatGPT-Anmeldung', type: 'text', placeholder: '/data/chatgpt-auth.json', help: 'Hier speichert der Bot die Anmeldung aus „Continue with ChatGPT“. Normalerweise leer lassen.' },
 
   {
     key: 'PROMPT_EXTRA',

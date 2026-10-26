@@ -12,7 +12,8 @@ import { config, type Config } from '../config.js';
 import type { TicketStatus, User, UserPatch } from '../db/repo.js';
 import { bus, type AppEvent } from '../events.js';
 import { createServices, enabledServices, pingAll, type Services } from '../integrations/index.js';
-import { createProvider } from '../llm/index.js';
+import { createProvider, LLMError } from '../llm/index.js';
+import { chatgptAuth, REDIRECT_URI } from '../llm/chatgptAuth.js';
 import { recentLogs } from '../logger.js';
 import { GROUPS } from '../settings/registry.js';
 import type { WhatsAppClient } from '../whatsapp/client.js';
@@ -817,7 +818,6 @@ export function createApi(deps: ApiDeps) {
     const preview = settings.preview(values);
     if (!preview.ok) return c.json({ models: [], error: preview.error });
     const { llm } = preview.config;
-    if (llm.provider === 'chatgpt') return c.json({ models: ['gpt-5', 'gpt-5-codex', 'gpt-5-mini'], note: 'Beim ChatGPT-Login gibt es keine Modell-Liste – das sind übliche Namen.' });
     try {
       const provider = createProvider(preview.config);
       if (provider.listModels) return c.json({ models: (await provider.listModels()).sort() });
@@ -831,6 +831,33 @@ export function createApi(deps: ApiDeps) {
     } catch (err) {
       return c.json({ models: [], error: `Modell-Liste nicht abrufbar: ${errText(err)}` });
     }
+  });
+
+  // ---------------------------------------------------------------- ChatGPT plan (Sign in with ChatGPT)
+
+  const gpt = () => chatgptAuth(ctx.config.llm.chatgptAuthFile);
+  const asBadRequest = (err: unknown): never => {
+    throw err instanceof LLMError ? new HttpError(400, err.message) : err;
+  };
+
+  api.get('/chatgpt', (c) => c.json(gpt().status()));
+
+  api.post('/chatgpt/login', async (c) => {
+    const { consent } = await body(c, z.object({ consent: z.boolean().default(false) }));
+    return c.json({ url: gpt().startLogin({ consent }), redirectUri: REDIRECT_URI });
+  });
+
+  api.post('/chatgpt/callback', async (c) => {
+    const { url } = await body(c, z.object({ url: z.string().trim().min(1).max(8000) }));
+    const res = await gpt().completeLogin(url).catch(asBadRequest);
+    ctx.logger.info({ email: res.status.email, planUsage: res.status.planUsage }, 'ChatGPT verbunden');
+    return c.json(res);
+  });
+
+  api.post('/chatgpt/logout', async (c) => {
+    const { revoked } = await gpt().logout();
+    ctx.logger.info({ revoked }, 'ChatGPT getrennt');
+    return c.json({ revoked, status: gpt().status() });
   });
 
   return api;

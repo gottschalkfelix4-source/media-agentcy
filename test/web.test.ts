@@ -266,6 +266,18 @@ test('admin numbers cannot be deleted, other users can', async () => {
   assert.equal(app.repo.getUser(max.id), undefined);
 });
 
+test('ChatGPT sign-in endpoints: status, start (with the loopback redirect), bad callback is a 400', async () => {
+  const status = await req('GET', '/chatgpt');
+  assert.equal(status.status, 200);
+  assert.equal(status.json.connected, false);
+  const start = await req('POST', '/chatgpt/login', {});
+  assert.match(start.json.url, /^https:\/\/auth\.openai\.com\/api\/accounts\/authorize\?.*client_id=dynamic_agent_client/);
+  assert.equal(start.json.redirectUri, 'http://127.0.0.1:1455/auth/callback');
+  const bad = await req('POST', '/chatgpt/callback', { url: 'http://127.0.0.1:1455/auth/callback?code=x&state=falsch' });
+  assert.equal(bad.status, 400);
+  assert.match(bad.json.error, /keinem offenen Versuch/);
+});
+
 test('logout ends the session', async () => {
   await req('POST', '/auth/logout', {});
   assert.equal((await req('GET', '/overview')).status, 401);

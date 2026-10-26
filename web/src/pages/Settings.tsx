@@ -1,8 +1,8 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { CheckCircle2, Download, KeyRound, Plug, RotateCcw, Save, X, XCircle } from 'lucide-react';
+import { CheckCircle2, Download, ExternalLink, KeyRound, LogOut, Plug, RotateCcw, Save, X, XCircle } from 'lucide-react';
 import { useEffect, useMemo, useState, type KeyboardEvent } from 'react';
-import { api, queryClient, type SettingDef, type SettingsResponse } from '../api';
-import { Badge, Button, Card, ErrorBox, Field, Input, Loading, PageHeader, Select, Textarea, Toggle, cx, toast, toastError } from '../components/ui';
+import { api, queryClient, type ChatGPTStatus, type SettingDef, type SettingsResponse } from '../api';
+import { Badge, Button, Card, ErrorBox, Field, Input, Loading, Modal, PageHeader, Select, Textarea, Toggle, cx, toast, toastError } from '../components/ui';
 import { setQuery, useLocation } from '../router';
 
 /** Unsaved edits: string = new value, null = reset to env/default. */
@@ -207,6 +207,139 @@ function TestButton({ target, draft }: { target: string; draft: Draft }) {
   );
 }
 
+const USAGE_URL = 'https://chatgpt.com/settings/usage';
+
+/**
+ * "Sign in with ChatGPT" for the ChatGPT plan. OpenAI only allows a 127.0.0.1 callback, which never reaches
+ * this server – so after approving, the admin copies the (not loading) callback address and pastes it here.
+ */
+function ChatGPTCard() {
+  const q = useQuery({ queryKey: ['chatgpt'], queryFn: () => api<ChatGPTStatus>('/chatgpt') });
+  const [pending, setPending] = useState<string | null>(null);
+  const [callback, setCallback] = useState('');
+  const [welcome, setWelcome] = useState(false);
+  const start = useMutation({
+    mutationFn: (consent: boolean) => api<{ url: string }>('/chatgpt/login', { body: { consent } }),
+    onSuccess: (r) => {
+      setPending(r.url);
+      setCallback('');
+      window.open(r.url, '_blank', 'noopener');
+    },
+    onError: toastError,
+  });
+  const finish = useMutation({
+    mutationFn: () => api<{ status: ChatGPTStatus; firstPlanSignIn: boolean }>('/chatgpt/callback', { body: { url: callback } }),
+    onSuccess: (r) => {
+      queryClient.setQueryData(['chatgpt'], r.status);
+      setPending(null);
+      setCallback('');
+      if (r.firstPlanSignIn) setWelcome(true);
+      else toast(r.status.planUsage ? 'ChatGPT verbunden' : 'Angemeldet – aber ohne Erlaubnis, das ChatGPT-Abo zu nutzen', r.status.planUsage ? 'ok' : 'info');
+    },
+    onError: toastError,
+  });
+  const logout = useMutation({
+    mutationFn: () => api<{ revoked: boolean; status: ChatGPTStatus }>('/chatgpt/logout', { body: {} }),
+    onSuccess: (r) => {
+      queryClient.setQueryData(['chatgpt'], r.status);
+      toast(r.revoked ? 'ChatGPT getrennt' : 'Lokal getrennt – der Widerruf bei OpenAI wurde nicht bestätigt. In ChatGPT unter Einstellungen → Apps trennen.', r.revoked ? 'ok' : 'info');
+    },
+    onError: toastError,
+  });
+
+  const s = q.data;
+  return (
+    <Card title="ChatGPT-Abo nutzen" actions={s?.planUsage && <Badge tone="ok">Using ChatGPT plan</Badge>}>
+      {q.isPending ? (
+        <Loading />
+      ) : q.isError ? (
+        <ErrorBox error={q.error} />
+      ) : (
+        <div className="space-y-4 text-[13px]">
+          {s!.connected ? (
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <span className="inline-flex items-center gap-1.5">
+                <CheckCircle2 className={cx('size-4', s!.planUsage ? 'text-ok' : 'text-warn')} />
+                Verbunden{s!.email ? <> als <strong>{s!.email}</strong></> : null}
+              </span>
+              <a className="inline-flex items-center gap-1 text-accent-text hover:underline" href={USAGE_URL} target="_blank" rel="noreferrer">
+                Manage usage <ExternalLink className="size-3" />
+              </a>
+              <span className="flex-1" />
+              <Button size="sm" variant="ghost" loading={start.isPending} onClick={() => start.mutate(false)}>
+                Neu anmelden
+              </Button>
+              <Button size="sm" variant="ghost" icon={<LogOut className="size-3.5" />} loading={logout.isPending} onClick={() => logout.mutate()}>
+                Trennen
+              </Button>
+            </div>
+          ) : (
+            <p className="text-fg-2">
+              Beantworte Nachrichten mit den Modellen und dem Kontingent deines ChatGPT-Abos statt mit einem API-Key. Die Nutzung zählt auf dein Abo-Limit (bei Plus geteilt mit allen anderen Apps); Limits pro App stellst du in ChatGPT ein.
+            </p>
+          )}
+          {s!.connected && !s!.planUsage && (
+            <div className="rounded-lg bg-warn-soft p-3 text-fg-2">
+              Die Anmeldung erlaubt <strong>nicht</strong>, dein ChatGPT-Abo zu nutzen – der Bot kann so nicht antworten.{' '}
+              <Button size="sm" variant="secondary" className="ml-1" loading={start.isPending} onClick={() => start.mutate(true)}>
+                Abo-Nutzung aktivieren
+              </Button>
+            </div>
+          )}
+          {!s!.connected && !pending && (
+            <Button variant="primary" loading={start.isPending} onClick={() => start.mutate(false)}>
+              Continue with ChatGPT
+            </Button>
+          )}
+          {pending && (
+            <div className="space-y-3 rounded-lg bg-surface-2 p-3">
+              <ol className="list-decimal space-y-1 pl-5 text-fg-2">
+                <li>
+                  Im neuen Tab bei ChatGPT anmelden und zustimmen.{' '}
+                  <a className="text-accent-text hover:underline" href={pending} target="_blank" rel="noreferrer">
+                    Tab nicht aufgegangen?
+                  </a>
+                </li>
+                <li>
+                  Danach landet der Browser auf <code className="rounded bg-surface px-1">127.0.0.1:1455/auth/callback…</code> und die Seite lädt nicht – das ist richtig.
+                </li>
+                <li>Die komplette Adresse aus der Adressleiste kopieren und hier einfügen:</li>
+              </ol>
+              <Textarea rows={3} value={callback} placeholder="http://127.0.0.1:1455/auth/callback?code=…" onChange={(e) => setCallback(e.target.value)} />
+              <div className="flex gap-2">
+                <Button variant="primary" loading={finish.isPending} disabled={!callback.trim()} onClick={() => finish.mutate()}>
+                  Verbinden
+                </Button>
+                <Button variant="ghost" onClick={() => setPending(null)}>
+                  Abbrechen
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      <Modal
+        open={welcome}
+        onClose={() => setWelcome(false)}
+        title="You're using your ChatGPT plan"
+        footer={
+          <Button variant="primary" onClick={() => setWelcome(false)}>
+            Got it
+          </Button>
+        }
+      >
+        <p className="text-[13px] text-fg-2">
+          Antworten des Bots laufen jetzt über dein ChatGPT-Abo und zählen auf dessen Nutzungslimit. Verbrauch und Limits für diese App verwaltest du in den{' '}
+          <a className="text-accent-text hover:underline" href={USAGE_URL} target="_blank" rel="noreferrer">
+            ChatGPT-Einstellungen
+          </a>
+          .
+        </p>
+      </Modal>
+    </Card>
+  );
+}
+
 function PasswordCard({ fromEnv }: { fromEnv: boolean }) {
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
@@ -382,6 +515,7 @@ export function SettingsPage() {
               </div>
             )}
           </Card>
+          {group.id === 'llm' && llmProvider === 'chatgpt' && <ChatGPTCard />}
           {group.id === 'system' && <PasswordCard fromEnv={q.data.passwordFromEnv} />}
         </div>
       </div>

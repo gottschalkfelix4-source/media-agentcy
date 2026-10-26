@@ -15,6 +15,7 @@ import { createServices, enabledServices, pingAll, type Services } from '../inte
 import { createProvider, LLMError } from '../llm/index.js';
 import { chatgptAuth, REDIRECT_URI } from '../llm/chatgptAuth.js';
 import { recentLogs } from '../logger.js';
+import { LlmProfiles } from '../settings/profiles.js';
 import { GROUPS } from '../settings/registry.js';
 import type { WhatsAppClient } from '../whatsapp/client.js';
 import { SESSION_COOKIE, type WebAuth } from './auth.js';
@@ -791,15 +792,43 @@ export function createApi(deps: ApiDeps) {
 
   const patchSchema = z.object({ values: z.record(z.string(), z.string().nullable()) });
 
-  api.put('/settings', async (c) => {
-    const { values } = await body(c, patchSchema);
+  const applyPatch = (values: Record<string, string | null>) => {
     const res = settings.update(values);
     if (!res.ok) throw new HttpError(400, res.error);
     app.applySettings(res.changed);
     serviceCache = undefined;
     if (res.changed.includes('ADMIN_NUMBERS')) app.ensureAdminUsers();
     if (res.changed.length) repo.logAction(null, null, 'web_settings', { changed: res.changed });
-    return c.json({ ...settingsView(), changed: res.changed });
+    return res.changed;
+  };
+
+  api.put('/settings', async (c) => {
+    const { values } = await body(c, patchSchema);
+    const changed = applyPatch(values);
+    return c.json({ ...settingsView(), changed });
+  });
+
+  // ---------------------------------------------------------------- saved AI providers
+
+  const profiles = new LlmProfiles(repo, settings);
+
+  api.get('/llm-profiles', (c) => c.json(profiles.list()));
+
+  api.post('/llm-profiles', async (c) => {
+    const { name, values } = await body(c, z.object({ name: z.string().trim().min(1).max(60), values: patchSchema.shape.values.default({}) }));
+    return c.json(profiles.save(name, values));
+  });
+
+  api.post('/llm-profiles/:id/activate', (c) => {
+    const patch = profiles.patchFor(c.req.param('id'));
+    if (!patch) throw new HttpError(404, 'Profil nicht gefunden');
+    const changed = applyPatch(patch);
+    return c.json({ ...settingsView(), changed });
+  });
+
+  api.delete('/llm-profiles/:id', (c) => {
+    if (!profiles.remove(c.req.param('id'))) throw new HttpError(404, 'Profil nicht gefunden');
+    return c.json({ ok: true });
   });
 
   api.post('/settings/test', async (c) => {

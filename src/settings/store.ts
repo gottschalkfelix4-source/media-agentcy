@@ -41,6 +41,12 @@ export class SettingsStore {
     return src;
   }
 
+  /** Effective raw values (UI override, else environment), secrets included – for server-side use only. */
+  effective<K extends string>(keys: readonly K[], patch: SettingsPatch = {}): Partial<Record<K, string>> {
+    const src = this.source(patch);
+    return Object.fromEntries(keys.map((k) => [k, src[k]?.trim() || undefined]).filter(([, v]) => v !== undefined)) as Partial<Record<K, string>>;
+  }
+
   /** Builds a config with a draft patch applied, without saving anything. */
   preview(patch: SettingsPatch = {}) {
     return buildConfig(this.source(patch));

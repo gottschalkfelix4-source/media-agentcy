@@ -276,3 +276,15 @@ export interface ChatGPTStatus {
   expiresAt?: string;
   authFile: string;
 }
+
+export interface LlmProfile {
+  id: string;
+  name: string;
+  provider: string;
+  baseUrl?: string;
+  model?: string;
+  adminModel?: string;
+  keyHint?: string;
+  active: boolean;
+  createdAt: string;
+}

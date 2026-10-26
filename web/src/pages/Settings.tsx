@@ -1,8 +1,8 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { CheckCircle2, Download, ExternalLink, KeyRound, LogOut, Plug, RotateCcw, Save, X, XCircle } from 'lucide-react';
+import { Bookmark, CheckCircle2, Download, ExternalLink, KeyRound, LogOut, Plug, RotateCcw, Save, Trash2, X, XCircle } from 'lucide-react';
 import { useEffect, useMemo, useState, type KeyboardEvent } from 'react';
-import { api, queryClient, type ChatGPTStatus, type SettingDef, type SettingsResponse } from '../api';
-import { Badge, Button, Card, ErrorBox, Field, Input, Loading, Modal, PageHeader, Select, Textarea, Toggle, cx, toast, toastError } from '../components/ui';
+import { api, queryClient, type ChatGPTStatus, type LlmProfile, type SettingDef, type SettingsResponse } from '../api';
+import { Badge, Button, Card, ErrorBox, Field, IconButton, Input, Loading, Modal, PageHeader, Select, Textarea, Toggle, cx, toast, toastError } from '../components/ui';
 import { setQuery, useLocation } from '../router';
 
 /** Unsaved edits: string = new value, null = reset to env/default. */
@@ -204,6 +204,94 @@ function TestButton({ target, draft }: { target: string; draft: Draft }) {
         </span>
       )}
     </div>
+  );
+}
+
+const PROFILE_KEYS = ['LLM_PROVIDER', 'LLM_BASE_URL', 'LLM_API_KEY', 'LLM_MODEL', 'LLM_MODEL_ADMIN', 'LLM_TEMPERATURE', 'LLM_VISION'];
+
+/** Saved AI providers: snapshot the current LLM settings under a name and switch back with one click. */
+function ProfilesCard({ draft, providers, onApplied }: { draft: Draft; providers: Map<string, string>; onApplied: (res: SettingsResponse) => void }) {
+  const q = useQuery({ queryKey: ['llm-profiles'], queryFn: () => api<LlmProfile[]>('/llm-profiles') });
+  const [name, setName] = useState('');
+  const llmDraft = Object.fromEntries(Object.entries(draft).filter(([k]) => PROFILE_KEYS.includes(k)));
+  const save = useMutation({
+    mutationFn: () => api<LlmProfile>('/llm-profiles', { body: { name, values: llmDraft } }),
+    onSuccess: (p) => {
+      setName('');
+      void queryClient.invalidateQueries({ queryKey: ['llm-profiles'] });
+      toast(`„${p.name}“ gespeichert`);
+    },
+    onError: toastError,
+  });
+  const activate = useMutation({
+    mutationFn: (p: LlmProfile) => api<SettingsResponse>(`/llm-profiles/${p.id}/activate`, { body: {} }),
+    onSuccess: (res, p) => {
+      onApplied(res);
+      void queryClient.invalidateQueries({ queryKey: ['llm-profiles'] });
+      toast(`„${p.name}“ ist jetzt aktiv`);
+    },
+    onError: toastError,
+  });
+  const remove = useMutation({
+    mutationFn: (p: LlmProfile) => api(`/llm-profiles/${p.id}`, { method: 'DELETE' }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['llm-profiles'] }),
+    onError: toastError,
+  });
+
+  return (
+    <Card title={<span className="inline-flex items-center gap-2"><Bookmark className="size-4" /> Gespeicherte Anbieter</span>}>
+      {q.isPending ? (
+        <Loading />
+      ) : q.isError ? (
+        <ErrorBox error={q.error} />
+      ) : (
+        <div className="space-y-4">
+          {q.data.length ? (
+            <ul className="divide-y divide-line rounded-lg border border-line">
+              {q.data.map((p) => (
+                <li key={p.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 text-[13px] font-medium">
+                      {p.name}
+                      {p.active && <Badge tone="ok">aktiv</Badge>}
+                    </div>
+                    <p className="truncate text-xs text-fg-3">
+                      {providers.get(p.provider) ?? p.provider}
+                      {p.model ? ` · ${p.model}` : ''}
+                      {p.baseUrl ? ` · ${p.baseUrl}` : ''}
+                      {p.keyHint ? ` · Key ${p.keyHint}` : ''}
+                    </p>
+                  </div>
+                  <Button size="sm" variant={p.active ? 'ghost' : 'secondary'} disabled={p.active} loading={activate.isPending && activate.variables?.id === p.id} onClick={() => activate.mutate(p)}>
+                    {p.active ? 'Aktiv' : 'Übernehmen'}
+                  </Button>
+                  <IconButton label="Löschen" onClick={() => remove.mutate(p)}>
+                    <Trash2 className="size-3.5" />
+                  </IconButton>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-[13px] text-fg-3">Noch keine gespeichert. Richte oben einen Anbieter ein, teste ihn und speichere ihn hier unter einem Namen – dann reicht beim nächsten Wechsel ein Klick.</p>
+          )}
+          <form
+            className="flex flex-wrap items-end gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              save.mutate();
+            }}
+          >
+            <Field label="Aktuelle Einstellungen speichern als" help={Object.keys(llmDraft).length ? 'Inklusive der noch nicht gespeicherten Änderungen oben.' : 'Anbieter, Endpoint, API-Key, Modelle, Temperatur und Bilder.'}>
+              <Input value={name} maxLength={60} placeholder="z. B. Ollama zuhause" onChange={(e) => setName(e.target.value)} />
+            </Field>
+            <Button type="submit" variant="secondary" loading={save.isPending} disabled={!name.trim()} icon={<Save className="size-4" />}>
+              Speichern
+            </Button>
+          </form>
+          <p className="text-xs text-fg-3">„Übernehmen“ ersetzt die KI-Einstellungen sofort; Felder, die das Profil nicht hat, werden geleert. Gleicher Name überschreibt.</p>
+        </div>
+      )}
+    </Card>
   );
 }
 
@@ -516,6 +604,17 @@ export function SettingsPage() {
             )}
           </Card>
           {group.id === 'llm' && llmProvider === 'chatgpt' && <ChatGPTCard />}
+          {group.id === 'llm' && (
+            <ProfilesCard
+              draft={draft}
+              providers={new Map((q.data.settings.find((s) => s.key === 'LLM_PROVIDER')?.options ?? []).map((o) => [o.value, o.label]))}
+              onApplied={(res) => {
+                queryClient.setQueryData(['settings'], res);
+                setDraftState((d) => Object.fromEntries(Object.entries(d).filter(([k]) => !PROFILE_KEYS.includes(k))));
+                void queryClient.invalidateQueries({ queryKey: ['overview'] });
+              }}
+            />
+          )}
           {group.id === 'system' && <PasswordCard fromEnv={q.data.passwordFromEnv} />}
         </div>
       </div>

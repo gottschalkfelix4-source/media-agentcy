@@ -203,7 +203,7 @@ Damit Hermes etwas reparieren kann, braucht er Zugriff auf den Server (z. B. SSH
 | Anthropic | API-Key von [platform.claude.com](https://platform.claude.com/) (ein Claude-Pro/Max-Abo lässt sich laut Anthropic nicht in fremden Apps nutzen). Standardmodell `claude-opus-5-5`, Prompt-Caching automatisch. |
 | ChatGPT-Abo | Kein Key: Einstellungen → KI-Anbieter → **Continue with ChatGPT**. OpenAI erlaubt als Rücksprung nur `127.0.0.1` – nach der Zustimmung lädt die Seite deshalb nicht. Die Adresse aus der Adressleiste kopieren und in der Oberfläche einfügen. Verbrauch und Limits: [ChatGPT → Einstellungen → Nutzung](https://chatgpt.com/settings/usage). |
 
-Wer öfter zwischen Anbietern wechselt, speichert sie unter Einstellungen → KI-Anbieter → **Gespeicherte Anbieter** und wechselt dann mit einem Klick.
+Unter Einstellungen → KI-Anbieter hat jeder Anbieter seine eigene Seite mit eigenem Key, eigener URL und eigenen Modellen. Mit **+ Anbieter hinzufügen** legst du beliebig viele eigene Endpoints an; **Diesen Anbieter verwenden** schaltet den Bot sofort um.
 
 ## docker run / docker compose
 

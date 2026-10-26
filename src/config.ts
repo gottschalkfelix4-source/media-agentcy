@@ -170,6 +170,9 @@ export function buildConfig(source: Record<string, string | undefined>): { ok: t
     if (!Number.isFinite(c[k]) || c[k] < 0) return { ok: false, error: `${k} muss eine Zahl ≥ 0 sein` };
   }
   if (c.DIGEST_HOUR > 23) return { ok: false, error: 'DIGEST_HOUR muss zwischen 0 und 23 liegen' };
+  if (c.LLM_TEMPERATURE !== undefined && !(Number.isFinite(c.LLM_TEMPERATURE) && c.LLM_TEMPERATURE >= 0 && c.LLM_TEMPERATURE <= 2)) {
+    return { ok: false, error: 'LLM_TEMPERATURE muss eine Zahl zwischen 0 und 2 sein' };
+  }
   return { ok: true, config: c };
 }
 

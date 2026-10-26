@@ -15,7 +15,7 @@ import { createServices, enabledServices, pingAll, type Services } from '../inte
 import { createProvider, LLMError } from '../llm/index.js';
 import { chatgptAuth, REDIRECT_URI } from '../llm/chatgptAuth.js';
 import { recentLogs } from '../logger.js';
-import { LlmProfiles } from '../settings/profiles.js';
+import { LlmProviders, VALUE_KEYS, type ProviderPatch } from '../settings/providers.js';
 import { GROUPS } from '../settings/registry.js';
 import type { WhatsAppClient } from '../whatsapp/client.js';
 import { SESSION_COOKIE, type WebAuth } from './auth.js';
@@ -84,6 +84,21 @@ function cookieOptions(c: Context, maxAge: number) {
 }
 
 const errText = (err: unknown) => (err instanceof Error ? err.message : String(err)).slice(0, 300);
+
+/** Model ids of a provider: its own listing if it has one, else the OpenAI-compatible /models. */
+async function listModels(cfg: Config): Promise<string[]> {
+  const provider = createProvider(cfg);
+  if (provider.listModels) return (await provider.listModels()).sort();
+  const { llm } = cfg;
+  const res = await fetch(`${llm.baseUrl}/models`, { headers: llm.apiKey ? { authorization: `Bearer ${llm.apiKey}` } : {}, signal: AbortSignal.timeout(15_000) });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = (await res.json()) as { data?: { id: string; supported_parameters?: string[] }[] };
+  // OpenRouter tells which models support tools – only those work for the agent.
+  return (data.data ?? [])
+    .filter((m) => !m.supported_parameters || m.supported_parameters.includes('tools'))
+    .map((m) => m.id)
+    .sort();
+}
 
 async function testService(target: string, cfg: Config): Promise<string> {
   if (target === 'llm') {
@@ -808,27 +823,72 @@ export function createApi(deps: ApiDeps) {
     return c.json({ ...settingsView(), changed });
   });
 
-  // ---------------------------------------------------------------- saved AI providers
+  // ---------------------------------------------------------------- AI providers (one page each)
 
-  const profiles = new LlmProfiles(repo, settings);
+  const gpt = () => chatgptAuth(ctx.config.llm.chatgptAuthFile);
+  const providers = new LlmProviders(repo, settings, () => gpt().status().connected);
+  const providerDraft = z
+    .object(Object.fromEntries(VALUE_KEYS.map((k) => [k, z.string().max(4000).nullable().optional()])) as Record<(typeof VALUE_KEYS)[number], z.ZodOptional<z.ZodNullable<z.ZodString>>>)
+    .default({});
+  const previewFor = (id: string, draft: ProviderPatch) => {
+    const patch = providers.patchFor(id, draft);
+    if (!patch) throw new HttpError(404, 'Anbieter nicht gefunden');
+    const preview = settings.preview(patch);
+    if (!preview.ok) throw new HttpError(400, preview.error);
+    return { patch, config: preview.config };
+  };
 
-  api.get('/llm-profiles', (c) => c.json(profiles.list()));
+  api.get('/llm/providers', (c) => c.json(providers.list()));
 
-  api.post('/llm-profiles', async (c) => {
-    const { name, values } = await body(c, z.object({ name: z.string().trim().min(1).max(60), values: patchSchema.shape.values.default({}) }));
-    return c.json(profiles.save(name, values));
+  api.post('/llm/providers', async (c) => {
+    const { name } = await body(c, z.object({ name: z.string().trim().min(1).max(60) }));
+    return c.json(providers.create(name));
   });
 
-  api.post('/llm-profiles/:id/activate', (c) => {
-    const patch = profiles.patchFor(c.req.param('id'));
-    if (!patch) throw new HttpError(404, 'Profil nicht gefunden');
-    const changed = applyPatch(patch);
-    return c.json({ ...settingsView(), changed });
+  api.put('/llm/providers/:id', async (c) => {
+    const id = c.req.param('id');
+    const { name, values } = await body(c, z.object({ name: z.string().trim().max(60).optional(), values: providerDraft }));
+    if (!providers.get(id)) throw new HttpError(404, 'Anbieter nicht gefunden');
+    // The active provider changes the running bot, so it has to be valid before it is saved.
+    if (providers.list().active === id) previewFor(id, values);
+    const res = providers.update(id, values, name);
+    if (res.livePatch) applyPatch(res.livePatch);
+    return c.json(providers.list());
   });
 
-  api.delete('/llm-profiles/:id', (c) => {
-    if (!profiles.remove(c.req.param('id'))) throw new HttpError(404, 'Profil nicht gefunden');
-    return c.json({ ok: true });
+  api.post('/llm/providers/:id/activate', (c) => {
+    const id = c.req.param('id');
+    const { patch } = previewFor(id, {});
+    applyPatch(patch);
+    providers.setActive(id);
+    repo.logAction(null, null, 'web_llm_provider', { provider: providers.get(id)?.name });
+    return c.json(providers.list());
+  });
+
+  api.delete('/llm/providers/:id', (c) => {
+    const res = providers.remove(c.req.param('id'));
+    if (res === 'not_found') throw new HttpError(404, 'Anbieter nicht gefunden');
+    if (res === 'builtin') throw new HttpError(400, 'Eingebaute Anbieter können nicht gelöscht werden');
+    if (res === 'active') throw new HttpError(409, 'Der aktive Anbieter kann nicht gelöscht werden – erst einen anderen verwenden');
+    return c.json(providers.list());
+  });
+
+  api.post('/llm/providers/:id/test', async (c) => {
+    const { values } = await body(c, z.object({ values: providerDraft }));
+    try {
+      return c.json({ ok: true, message: await testService('llm', previewFor(c.req.param('id'), values).config) });
+    } catch (err) {
+      return c.json({ ok: false, message: err instanceof HttpError ? err.message : errText(err) });
+    }
+  });
+
+  api.post('/llm/providers/:id/models', async (c) => {
+    const { values } = await body(c, z.object({ values: providerDraft }));
+    try {
+      return c.json({ models: await listModels(previewFor(c.req.param('id'), values).config) });
+    } catch (err) {
+      return c.json({ models: [], error: `Modell-Liste nicht abrufbar: ${err instanceof HttpError ? err.message : errText(err)}` });
+    }
   });
 
   api.post('/settings/test', async (c) => {
@@ -846,17 +906,8 @@ export function createApi(deps: ApiDeps) {
     const { values } = await body(c, patchSchema);
     const preview = settings.preview(values);
     if (!preview.ok) return c.json({ models: [], error: preview.error });
-    const { llm } = preview.config;
     try {
-      const provider = createProvider(preview.config);
-      if (provider.listModels) return c.json({ models: (await provider.listModels()).sort() });
-      const res = await fetch(`${llm.baseUrl}/models`, { headers: llm.apiKey ? { authorization: `Bearer ${llm.apiKey}` } : {}, signal: AbortSignal.timeout(15_000) });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = (await res.json()) as { data?: { id: string; supported_parameters?: string[] }[] };
-      const all = data.data ?? [];
-      // OpenRouter tells which models support tools – only those work for the agent.
-      const withTools = all.filter((m) => !m.supported_parameters || m.supported_parameters.includes('tools'));
-      return c.json({ models: withTools.map((m) => m.id).sort() });
+      return c.json({ models: await listModels(preview.config) });
     } catch (err) {
       return c.json({ models: [], error: `Modell-Liste nicht abrufbar: ${errText(err)}` });
     }
@@ -864,7 +915,6 @@ export function createApi(deps: ApiDeps) {
 
   // ---------------------------------------------------------------- ChatGPT plan (Sign in with ChatGPT)
 
-  const gpt = () => chatgptAuth(ctx.config.llm.chatgptAuthFile);
   const asBadRequest = (err: unknown): never => {
     throw err instanceof LLMError ? new HttpError(400, err.message) : err;
   };

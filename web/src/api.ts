@@ -277,14 +277,25 @@ export interface ChatGPTStatus {
   authFile: string;
 }
 
-export interface LlmProfile {
+export type ProviderKind = 'openai' | 'anthropic' | 'openrouter' | 'chatgpt' | 'custom';
+
+export interface AiProvider {
   id: string;
+  kind: ProviderKind;
   name: string;
-  provider: string;
+  builtin: boolean;
+  active: boolean;
+  configured: boolean;
   baseUrl?: string;
   model?: string;
   adminModel?: string;
+  temperature?: string;
+  vision?: string;
+  keySet: boolean;
   keyHint?: string;
-  active: boolean;
-  createdAt: string;
+}
+
+export interface AiProvidersResponse {
+  active: string;
+  providers: AiProvider[];
 }

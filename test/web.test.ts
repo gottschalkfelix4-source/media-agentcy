@@ -266,35 +266,53 @@ test('admin numbers cannot be deleted, other users can', async () => {
   assert.equal(app.repo.getUser(max.id), undefined);
 });
 
-test('saved AI providers: save (key stays on the server), switch with one click, delete', async () => {
+test('AI providers: seeded from the running settings, each keeps its own values, switch with one click', async () => {
   const scripted = app.ctx.llm;
   try {
-    const saved = await req('POST', '/llm-profiles', { name: 'Ollama zuhause', values: { LLM_MODEL: 'qwen3:14b' } });
-    assert.equal(saved.status, 200);
-    assert.equal(saved.json.provider, 'custom');
-    assert.equal(saved.json.model, 'qwen3:14b', 'unsaved edits from the page are included');
-    assert.equal(saved.json.keyHint, '…1234');
-    assert.equal(saved.json.active, false, 'not active: the live model is still a different one');
+    const first = await req('GET', '/llm/providers');
+    assert.equal(first.status, 200);
+    const names = first.json.providers.map((p: any) => p.id);
+    for (const b of ['openai', 'anthropic', 'openrouter', 'chatgpt']) assert.ok(names.includes(b), `built-in ${b}`);
+    // The env runs a custom endpoint: it became the active custom entry, with its key kept server-side.
+    const custom = first.json.providers.find((p: any) => p.id === first.json.active);
+    assert.equal(custom.kind, 'custom');
+    assert.equal(custom.baseUrl, 'http://unused');
+    assert.equal(custom.keyHint, '…1234');
+    assert.ok(!JSON.stringify(first.json).includes('sk-secret'), 'API keys never go to the browser');
 
-    // Switch to another provider, then back via the profile.
-    const other = await req('PUT', '/settings', { values: { LLM_PROVIDER: 'openrouter', LLM_BASE_URL: null, LLM_API_KEY: 'sk-or-other-9999', LLM_MODEL: 'x/y' } });
-    assert.equal(other.status, 200);
-    assert.equal(config.llm.provider, 'openrouter');
+    // Anthropic gets its own key and model without touching the running bot.
+    const put = await req('PUT', '/llm/providers/anthropic', { values: { LLM_API_KEY: 'sk-ant-test-5678', LLM_MODEL: 'claude-sonnet-5-5' } });
+    assert.equal(put.status, 200);
+    assert.equal(config.llm.provider, 'custom', 'saving an inactive provider changes nothing live');
 
-    const list = await req('GET', '/llm-profiles');
-    assert.ok(!JSON.stringify(list.json).includes('sk-secret'), 'API keys never go to the browser');
-    const act = await req('POST', `/llm-profiles/${saved.json.id}/activate`, {});
+    const act = await req('POST', '/llm/providers/anthropic/activate', {});
     assert.equal(act.status, 200);
+    assert.equal(act.json.active, 'anthropic');
+    assert.equal(config.llm.provider, 'anthropic');
+    assert.equal(config.llm.apiKey, 'sk-ant-test-5678');
+    assert.equal(config.llm.model, 'claude-sonnet-5-5');
+    assert.equal(config.llm.baseUrl, undefined, "the custom endpoint's URL doesn't leak into Anthropic");
+
+    // Editing the active provider applies immediately; invalid values are refused.
+    assert.equal((await req('PUT', '/llm/providers/anthropic', { values: { LLM_MODEL_ADMIN: 'claude-opus-5-5' } })).status, 200);
+    assert.equal(config.llm.adminModel, 'claude-opus-5-5');
+    assert.equal((await req('PUT', '/llm/providers/anthropic', { values: { LLM_TEMPERATURE: 'warm' } })).status, 400);
+
+    // "+": a second custom provider; it can be deleted, the active one and built-ins can't.
+    const added = await req('POST', '/llm/providers', { name: 'LM Studio' });
+    assert.equal(added.json.kind, 'custom');
+    assert.equal((await req('DELETE', '/llm/providers/anthropic')).status, 400);
+    assert.equal((await req('DELETE', `/llm/providers/${added.json.id}`)).status, 200);
+
+    // Back to the custom endpoint: everything it had is there again.
+    assert.equal((await req('POST', `/llm/providers/${custom.id}/activate`, {})).status, 200);
     assert.equal(config.llm.provider, 'custom');
     assert.equal(config.llm.baseUrl, 'http://unused');
     assert.equal(config.llm.apiKey, 'sk-secret-value-1234');
-    assert.equal(config.llm.model, 'qwen3:14b');
-    assert.equal(config.LLM_MODEL_ADMIN, undefined, 'fields the profile lacks are cleared');
-    assert.equal((await req('GET', '/llm-profiles')).json[0].active, true);
+    assert.equal((await req('DELETE', `/llm/providers/${custom.id}`)).status, 409);
 
-    assert.equal((await req('DELETE', `/llm-profiles/${saved.json.id}`)).status, 200);
-    assert.deepEqual((await req('GET', '/llm-profiles')).json, []);
-    assert.equal((await req('POST', '/llm-profiles/nope/activate', {})).status, 404);
+    const models = await req('POST', '/llm/providers/nope/models', { values: {} });
+    assert.match(models.json.error, /nicht gefunden/);
   } finally {
     await req('PUT', '/settings', { values: Object.fromEntries(['LLM_PROVIDER', 'LLM_BASE_URL', 'LLM_API_KEY', 'LLM_MODEL', 'LLM_MODEL_ADMIN', 'LLM_TEMPERATURE', 'LLM_VISION'].map((k) => [k, null])) });
     app.ctx.llm = scripted;

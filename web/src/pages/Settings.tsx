@@ -1,9 +1,10 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Bookmark, CheckCircle2, Download, ExternalLink, KeyRound, LogOut, Plug, RotateCcw, Save, Trash2, X, XCircle } from 'lucide-react';
+import { CheckCircle2, KeyRound, Plug, RotateCcw, Save, X, XCircle } from 'lucide-react';
 import { useEffect, useMemo, useState, type KeyboardEvent } from 'react';
-import { api, queryClient, type ChatGPTStatus, type LlmProfile, type SettingDef, type SettingsResponse } from '../api';
-import { Badge, Button, Card, ErrorBox, Field, IconButton, Input, Loading, Modal, PageHeader, Select, Textarea, Toggle, cx, toast, toastError } from '../components/ui';
+import { api, queryClient, type SettingDef, type SettingsResponse } from '../api';
+import { Badge, Button, Card, ErrorBox, Field, Input, Loading, PageHeader, Select, Textarea, Toggle, cx, toast, toastError } from '../components/ui';
 import { setQuery, useLocation } from '../router';
+import { AiProviders } from './AiProviders';
 
 /** Unsaved edits: string = new value, null = reset to env/default. */
 type Draft = Record<string, string | null>;
@@ -207,227 +208,6 @@ function TestButton({ target, draft }: { target: string; draft: Draft }) {
   );
 }
 
-const PROFILE_KEYS = ['LLM_PROVIDER', 'LLM_BASE_URL', 'LLM_API_KEY', 'LLM_MODEL', 'LLM_MODEL_ADMIN', 'LLM_TEMPERATURE', 'LLM_VISION'];
-
-/** Saved AI providers: snapshot the current LLM settings under a name and switch back with one click. */
-function ProfilesCard({ draft, providers, onApplied }: { draft: Draft; providers: Map<string, string>; onApplied: (res: SettingsResponse) => void }) {
-  const q = useQuery({ queryKey: ['llm-profiles'], queryFn: () => api<LlmProfile[]>('/llm-profiles') });
-  const [name, setName] = useState('');
-  const llmDraft = Object.fromEntries(Object.entries(draft).filter(([k]) => PROFILE_KEYS.includes(k)));
-  const save = useMutation({
-    mutationFn: () => api<LlmProfile>('/llm-profiles', { body: { name, values: llmDraft } }),
-    onSuccess: (p) => {
-      setName('');
-      void queryClient.invalidateQueries({ queryKey: ['llm-profiles'] });
-      toast(`„${p.name}“ gespeichert`);
-    },
-    onError: toastError,
-  });
-  const activate = useMutation({
-    mutationFn: (p: LlmProfile) => api<SettingsResponse>(`/llm-profiles/${p.id}/activate`, { body: {} }),
-    onSuccess: (res, p) => {
-      onApplied(res);
-      void queryClient.invalidateQueries({ queryKey: ['llm-profiles'] });
-      toast(`„${p.name}“ ist jetzt aktiv`);
-    },
-    onError: toastError,
-  });
-  const remove = useMutation({
-    mutationFn: (p: LlmProfile) => api(`/llm-profiles/${p.id}`, { method: 'DELETE' }),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['llm-profiles'] }),
-    onError: toastError,
-  });
-
-  return (
-    <Card title={<span className="inline-flex items-center gap-2"><Bookmark className="size-4" /> Gespeicherte Anbieter</span>}>
-      {q.isPending ? (
-        <Loading />
-      ) : q.isError ? (
-        <ErrorBox error={q.error} />
-      ) : (
-        <div className="space-y-4">
-          {q.data.length ? (
-            <ul className="divide-y divide-line rounded-lg border border-line">
-              {q.data.map((p) => (
-                <li key={p.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 text-[13px] font-medium">
-                      {p.name}
-                      {p.active && <Badge tone="ok">aktiv</Badge>}
-                    </div>
-                    <p className="truncate text-xs text-fg-3">
-                      {providers.get(p.provider) ?? p.provider}
-                      {p.model ? ` · ${p.model}` : ''}
-                      {p.baseUrl ? ` · ${p.baseUrl}` : ''}
-                      {p.keyHint ? ` · Key ${p.keyHint}` : ''}
-                    </p>
-                  </div>
-                  <Button size="sm" variant={p.active ? 'ghost' : 'secondary'} disabled={p.active} loading={activate.isPending && activate.variables?.id === p.id} onClick={() => activate.mutate(p)}>
-                    {p.active ? 'Aktiv' : 'Übernehmen'}
-                  </Button>
-                  <IconButton label="Löschen" onClick={() => remove.mutate(p)}>
-                    <Trash2 className="size-3.5" />
-                  </IconButton>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-[13px] text-fg-3">Noch keine gespeichert. Richte oben einen Anbieter ein, teste ihn und speichere ihn hier unter einem Namen – dann reicht beim nächsten Wechsel ein Klick.</p>
-          )}
-          <form
-            className="flex flex-wrap items-end gap-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              save.mutate();
-            }}
-          >
-            <Field label="Aktuelle Einstellungen speichern als" help={Object.keys(llmDraft).length ? 'Inklusive der noch nicht gespeicherten Änderungen oben.' : 'Anbieter, Endpoint, API-Key, Modelle, Temperatur und Bilder.'}>
-              <Input value={name} maxLength={60} placeholder="z. B. Ollama zuhause" onChange={(e) => setName(e.target.value)} />
-            </Field>
-            <Button type="submit" variant="secondary" loading={save.isPending} disabled={!name.trim()} icon={<Save className="size-4" />}>
-              Speichern
-            </Button>
-          </form>
-          <p className="text-xs text-fg-3">„Übernehmen“ ersetzt die KI-Einstellungen sofort; Felder, die das Profil nicht hat, werden geleert. Gleicher Name überschreibt.</p>
-        </div>
-      )}
-    </Card>
-  );
-}
-
-const USAGE_URL = 'https://chatgpt.com/settings/usage';
-
-/**
- * "Sign in with ChatGPT" for the ChatGPT plan. OpenAI only allows a 127.0.0.1 callback, which never reaches
- * this server – so after approving, the admin copies the (not loading) callback address and pastes it here.
- */
-function ChatGPTCard() {
-  const q = useQuery({ queryKey: ['chatgpt'], queryFn: () => api<ChatGPTStatus>('/chatgpt') });
-  const [pending, setPending] = useState<string | null>(null);
-  const [callback, setCallback] = useState('');
-  const [welcome, setWelcome] = useState(false);
-  const start = useMutation({
-    mutationFn: (consent: boolean) => api<{ url: string }>('/chatgpt/login', { body: { consent } }),
-    onSuccess: (r) => {
-      setPending(r.url);
-      setCallback('');
-      window.open(r.url, '_blank', 'noopener');
-    },
-    onError: toastError,
-  });
-  const finish = useMutation({
-    mutationFn: () => api<{ status: ChatGPTStatus; firstPlanSignIn: boolean }>('/chatgpt/callback', { body: { url: callback } }),
-    onSuccess: (r) => {
-      queryClient.setQueryData(['chatgpt'], r.status);
-      setPending(null);
-      setCallback('');
-      if (r.firstPlanSignIn) setWelcome(true);
-      else toast(r.status.planUsage ? 'ChatGPT verbunden' : 'Angemeldet – aber ohne Erlaubnis, das ChatGPT-Abo zu nutzen', r.status.planUsage ? 'ok' : 'info');
-    },
-    onError: toastError,
-  });
-  const logout = useMutation({
-    mutationFn: () => api<{ revoked: boolean; status: ChatGPTStatus }>('/chatgpt/logout', { body: {} }),
-    onSuccess: (r) => {
-      queryClient.setQueryData(['chatgpt'], r.status);
-      toast(r.revoked ? 'ChatGPT getrennt' : 'Lokal getrennt – der Widerruf bei OpenAI wurde nicht bestätigt. In ChatGPT unter Einstellungen → Apps trennen.', r.revoked ? 'ok' : 'info');
-    },
-    onError: toastError,
-  });
-
-  const s = q.data;
-  return (
-    <Card title="ChatGPT-Abo nutzen" actions={s?.planUsage && <Badge tone="ok">Using ChatGPT plan</Badge>}>
-      {q.isPending ? (
-        <Loading />
-      ) : q.isError ? (
-        <ErrorBox error={q.error} />
-      ) : (
-        <div className="space-y-4 text-[13px]">
-          {s!.connected ? (
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-              <span className="inline-flex items-center gap-1.5">
-                <CheckCircle2 className={cx('size-4', s!.planUsage ? 'text-ok' : 'text-warn')} />
-                Verbunden{s!.email ? <> als <strong>{s!.email}</strong></> : null}
-              </span>
-              <a className="inline-flex items-center gap-1 text-accent-text hover:underline" href={USAGE_URL} target="_blank" rel="noreferrer">
-                Manage usage <ExternalLink className="size-3" />
-              </a>
-              <span className="flex-1" />
-              <Button size="sm" variant="ghost" loading={start.isPending} onClick={() => start.mutate(false)}>
-                Neu anmelden
-              </Button>
-              <Button size="sm" variant="ghost" icon={<LogOut className="size-3.5" />} loading={logout.isPending} onClick={() => logout.mutate()}>
-                Trennen
-              </Button>
-            </div>
-          ) : (
-            <p className="text-fg-2">
-              Beantworte Nachrichten mit den Modellen und dem Kontingent deines ChatGPT-Abos statt mit einem API-Key. Die Nutzung zählt auf dein Abo-Limit (bei Plus geteilt mit allen anderen Apps); Limits pro App stellst du in ChatGPT ein.
-            </p>
-          )}
-          {s!.connected && !s!.planUsage && (
-            <div className="rounded-lg bg-warn-soft p-3 text-fg-2">
-              Die Anmeldung erlaubt <strong>nicht</strong>, dein ChatGPT-Abo zu nutzen – der Bot kann so nicht antworten.{' '}
-              <Button size="sm" variant="secondary" className="ml-1" loading={start.isPending} onClick={() => start.mutate(true)}>
-                Abo-Nutzung aktivieren
-              </Button>
-            </div>
-          )}
-          {!s!.connected && !pending && (
-            <Button variant="primary" loading={start.isPending} onClick={() => start.mutate(false)}>
-              Continue with ChatGPT
-            </Button>
-          )}
-          {pending && (
-            <div className="space-y-3 rounded-lg bg-surface-2 p-3">
-              <ol className="list-decimal space-y-1 pl-5 text-fg-2">
-                <li>
-                  Im neuen Tab bei ChatGPT anmelden und zustimmen.{' '}
-                  <a className="text-accent-text hover:underline" href={pending} target="_blank" rel="noreferrer">
-                    Tab nicht aufgegangen?
-                  </a>
-                </li>
-                <li>
-                  Danach landet der Browser auf <code className="rounded bg-surface px-1">127.0.0.1:1455/auth/callback…</code> und die Seite lädt nicht – das ist richtig.
-                </li>
-                <li>Die komplette Adresse aus der Adressleiste kopieren und hier einfügen:</li>
-              </ol>
-              <Textarea rows={3} value={callback} placeholder="http://127.0.0.1:1455/auth/callback?code=…" onChange={(e) => setCallback(e.target.value)} />
-              <div className="flex gap-2">
-                <Button variant="primary" loading={finish.isPending} disabled={!callback.trim()} onClick={() => finish.mutate()}>
-                  Verbinden
-                </Button>
-                <Button variant="ghost" onClick={() => setPending(null)}>
-                  Abbrechen
-                </Button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-      <Modal
-        open={welcome}
-        onClose={() => setWelcome(false)}
-        title="You're using your ChatGPT plan"
-        footer={
-          <Button variant="primary" onClick={() => setWelcome(false)}>
-            Got it
-          </Button>
-        }
-      >
-        <p className="text-[13px] text-fg-2">
-          Antworten des Bots laufen jetzt über dein ChatGPT-Abo und zählen auf dessen Nutzungslimit. Verbrauch und Limits für diese App verwaltest du in den{' '}
-          <a className="text-accent-text hover:underline" href={USAGE_URL} target="_blank" rel="noreferrer">
-            ChatGPT-Einstellungen
-          </a>
-          .
-        </p>
-      </Modal>
-    </Card>
-  );
-}
-
 function PasswordCard({ fromEnv }: { fromEnv: boolean }) {
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
@@ -481,7 +261,6 @@ export function SettingsPage() {
   const { query } = useLocation();
   const q = useQuery({ queryKey: ['settings'], queryFn: () => api<SettingsResponse>('/settings'), staleTime: Infinity });
   const [draft, setDraftState] = useState<Draft>({});
-  const [models, setModels] = useState<string[]>();
   const groupId = query.get('group') ?? 'general';
 
   const setDraft = (key: string, v: string | null | undefined) =>
@@ -513,18 +292,6 @@ export function SettingsPage() {
     onError: toastError,
   });
 
-  const loadModels = useMutation({
-    mutationFn: () => api<{ models: string[]; error?: string; note?: string }>('/settings/models', { body: { values: draft } }),
-    onSuccess: (r) => {
-      if (r.error) toast(r.error, 'danger');
-      else {
-        setModels(r.models);
-        toast(r.note ?? `${r.models.length} Modelle mit Tool-Unterstützung geladen – tippe ins Modell-Feld`, 'info');
-      }
-    },
-    onError: toastError,
-  });
-
   const byGroup = useMemo(() => {
     const m = new Map<string, SettingDef[]>();
     for (const s of q.data?.settings ?? []) m.set(s.group, [...(m.get(s.group) ?? []), s]);
@@ -543,8 +310,6 @@ export function SettingsPage() {
     const url = f.find((s) => s.type === 'url' && s.key.endsWith('_URL') && !s.key.includes('PUBLIC'));
     return url ? url.isSet : undefined;
   };
-  const llmProvider = draft.LLM_PROVIDER ?? q.data.settings.find((s) => s.key === 'LLM_PROVIDER')?.value ?? 'openrouter';
-  const hidden = (s: SettingDef) => (s.key === 'CHATGPT_AUTH_FILE' && llmProvider !== 'chatgpt') || (s.key === 'LLM_BASE_URL' && llmProvider !== 'custom' && !s.isSet);
 
   return (
     <>
@@ -572,21 +337,17 @@ export function SettingsPage() {
         </nav>
 
         <div className="min-w-0 space-y-5">
+          {group.id === 'llm' ? (
+            <AiProviders />
+          ) : (
           <Card title={group.label} actions={group.test && <span className="hidden sm:block"><TestButton key={group.id} target={group.test} draft={draft} /></span>}>
             {group.description && <p className="-mt-1 mb-5 text-[13px] text-fg-3">{group.description}</p>}
             <div className="grid gap-5 md:grid-cols-2">
-              {fields
-                .filter((s) => !hidden(s))
-                .map((s) => (
-                  <div key={s.key} className={cx(s.type === 'textarea' || s.type === 'list' ? 'md:col-span-2' : undefined)}>
-                    <SettingField def={s} draft={draft} setDraft={setDraft} models={s.key.startsWith('LLM_MODEL') ? models : undefined} />
-                    {s.key === 'LLM_MODEL' && (
-                      <Button size="sm" variant="ghost" className="mt-1.5 -ml-2" loading={loadModels.isPending} icon={<Download className="size-3.5" />} onClick={() => loadModels.mutate()}>
-                        Modelle vom Anbieter laden
-                      </Button>
-                    )}
-                  </div>
-                ))}
+              {fields.map((s) => (
+                <div key={s.key} className={cx(s.type === 'textarea' || s.type === 'list' ? 'md:col-span-2' : undefined)}>
+                  <SettingField def={s} draft={draft} setDraft={setDraft} />
+                </div>
+              ))}
             </div>
             {group.test && (
               <div className="mt-5 border-t border-line pt-4 sm:hidden">
@@ -603,17 +364,6 @@ export function SettingsPage() {
               </div>
             )}
           </Card>
-          {group.id === 'llm' && llmProvider === 'chatgpt' && <ChatGPTCard />}
-          {group.id === 'llm' && (
-            <ProfilesCard
-              draft={draft}
-              providers={new Map((q.data.settings.find((s) => s.key === 'LLM_PROVIDER')?.options ?? []).map((o) => [o.value, o.label]))}
-              onApplied={(res) => {
-                queryClient.setQueryData(['settings'], res);
-                setDraftState((d) => Object.fromEntries(Object.entries(d).filter(([k]) => !PROFILE_KEYS.includes(k))));
-                void queryClient.invalidateQueries({ queryKey: ['overview'] });
-              }}
-            />
           )}
           {group.id === 'system' && <PasswordCard fromEnv={q.data.passwordFromEnv} />}
         </div>

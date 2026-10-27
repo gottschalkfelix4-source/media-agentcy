@@ -64,6 +64,7 @@ const PROVIDERS = [
   { value: 'openai', label: 'OpenAI (API-Key)' },
   { value: 'anthropic', label: 'Anthropic Claude (API-Key)' },
   { value: 'chatgpt', label: 'ChatGPT-Abo (Sign in with ChatGPT)' },
+  { value: 'grok', label: 'Grok-Abo (Anmeldung bei xAI)' },
   { value: 'custom', label: 'Eigener Endpoint (OpenAI-kompatibel)' },
 ];
 
@@ -133,7 +134,7 @@ export const SETTINGS: SettingDef[] = [
 
   { key: 'LLM_PROVIDER', group: 'llm', label: 'Anbieter', type: 'select', options: PROVIDERS, default: 'openrouter' },
   { key: 'LLM_BASE_URL', group: 'llm', label: 'Endpoint-URL', type: 'url', placeholder: 'http://ollama:11434/v1', help: 'Nur für „Eigener Endpoint“ nötig (bei Anthropic höchstens ein Proxy, ohne /v1). Leer = Standard des Anbieters.' },
-  { key: 'LLM_API_KEY', group: 'llm', label: 'API-Key', type: 'secret', help: 'Nicht nötig beim ChatGPT-Login. Anthropic: Key von platform.claude.com (ein Claude-Abo gilt hier nicht).' },
+  { key: 'LLM_API_KEY', group: 'llm', label: 'API-Key', type: 'secret', help: 'Nicht nötig beim ChatGPT- oder Grok-Login. Anthropic: Key von platform.claude.com (ein Claude-Abo gilt hier nicht).' },
   { key: 'VOICE_ENABLED', group: 'voice', label: 'Sprachnachrichten verstehen', type: 'bool', default: 'false' },
   {
     key: 'STT_BASE_URL',
@@ -147,11 +148,12 @@ export const SETTINGS: SettingDef[] = [
   { key: 'STT_MODEL', group: 'voice', label: 'Modell', type: 'text', default: 'whisper-1', help: 'Groq: whisper-large-v3-turbo · OpenAI: whisper-1 oder gpt-4o-mini-transcribe' },
   { key: 'VOICE_MAX_SECONDS', group: 'voice', label: 'Maximale Länge (Sekunden)', type: 'int', default: '120', help: 'Längere Sprachnachrichten werden nicht umgewandelt, der Bot bittet um eine kürzere. 0 = kein Limit.' },
 
-  { key: 'LLM_MODEL', group: 'llm', label: 'Modell', type: 'text', placeholder: 'Standard des Anbieters', help: 'Muss Tool-Calling können. Leer = openai/gpt-4.1-mini, bei Anthropic claude-opus-5-5, beim ChatGPT-Abo das erste Modell des Kontos.' },
+  { key: 'LLM_MODEL', group: 'llm', label: 'Modell', type: 'text', placeholder: 'Standard des Anbieters', help: 'Muss Tool-Calling können. Leer = openai/gpt-4.1-mini, bei Anthropic claude-opus-5-5, beim ChatGPT-Abo das erste Modell des Kontos, beim Grok-Abo grok-4.7.' },
   { key: 'LLM_MODEL_ADMIN', group: 'llm', label: 'Modell für den Admin-Chat', type: 'text', help: 'Optional, z. B. ein stärkeres Modell. Leer = wie oben.' },
   { key: 'LLM_TEMPERATURE', group: 'llm', label: 'Temperatur', type: 'float', placeholder: 'Standard des Modells', help: 'Wird bei Anthropic ignoriert (die aktuelle API nimmt keine Temperatur mehr an).' },
   { key: 'LLM_VISION', group: 'llm', label: 'Bilder an das Modell geben', type: 'bool', default: 'true', help: 'Für Screenshots von Fehlermeldungen. Das Modell muss Vision können.' },
   { key: 'CHATGPT_AUTH_FILE', group: 'llm', label: 'Datei für die ChatGPT-Anmeldung', type: 'text', placeholder: '/data/chatgpt-auth.json', help: 'Hier speichert der Bot die Anmeldung aus „Continue with ChatGPT“. Normalerweise leer lassen.' },
+  { key: 'GROK_AUTH_FILE', group: 'llm', label: 'Datei für die Grok-Anmeldung', type: 'text', placeholder: '/data/grok-auth.json', help: 'Hier speichert der Bot die Anmeldung aus „Mit Grok anmelden“. Normalerweise leer lassen.' },
 
   {
     key: 'PROMPT_EXTRA',

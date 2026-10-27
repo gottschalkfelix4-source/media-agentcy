@@ -11,6 +11,8 @@ export class OpenAIChatProvider implements LLMProvider {
     private readonly opts: {
       baseUrl: string;
       apiKey?: string;
+      /** Instead of a fixed key: a token that can change (OAuth sign-in). `force` = the last one got a 401. */
+      token?: (force: boolean) => Promise<string>;
       model: string;
       temperature?: number;
       extraHeaders?: Record<string, string>;
@@ -33,23 +35,31 @@ export class OpenAIChatProvider implements LLMProvider {
       body.tool_choice = 'auto';
     }
 
-    const res = await fetchWithRetry(
-      `${this.opts.baseUrl}/chat/completions`,
-      {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          ...(this.opts.apiKey ? { authorization: `Bearer ${this.opts.apiKey}` } : {}),
-          ...this.opts.extraHeaders,
+    const send = async (force: boolean) => {
+      const key = this.opts.token ? await this.opts.token(force) : this.opts.apiKey;
+      return fetchWithRetry(
+        `${this.opts.baseUrl}/chat/completions`,
+        {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            ...(key ? { authorization: `Bearer ${key}` } : {}),
+            ...this.opts.extraHeaders,
+          },
+          body: JSON.stringify(body),
         },
-        body: JSON.stringify(body),
-      },
-      3,
-      this.opts.timeoutMs ?? 120_000,
-    );
+        3,
+        this.opts.timeoutMs ?? 120_000,
+      );
+    };
+    let res = await send(false);
+    if (res.status === 401 && this.opts.token) {
+      await res.body?.cancel();
+      res = await send(true);
+    }
 
     const text = await res.text();
-    if (!res.ok) throw new LLMError(`${this.name} HTTP ${res.status}: ${text.slice(0, 500)}`, res.status);
+    if (!res.ok) throw this.httpError(res.status, text);
 
     let parsed: unknown;
     try {
@@ -75,6 +85,10 @@ export class OpenAIChatProvider implements LLMProvider {
       })),
       usage: { input: data.usage?.prompt_tokens, output: data.usage?.completion_tokens },
     };
+  }
+
+  protected httpError(status: number, text: string) {
+    return new LLMError(`${this.name} HTTP ${status}: ${text.slice(0, 500)}`, status);
   }
 }
 

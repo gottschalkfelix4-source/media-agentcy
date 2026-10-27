@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { CheckCircle2, Download, ExternalLink, LogOut, Plug, Plus, Save, Trash2, XCircle } from 'lucide-react';
+import { CheckCircle2, Copy, Download, ExternalLink, LogOut, Plug, Plus, Save, Trash2, XCircle } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
-import { api, queryClient, type AiProvider, type AiProvidersResponse, type ChatGPTStatus, type ProviderKind } from '../api';
+import { api, queryClient, type AiProvider, type AiProvidersResponse, type ChatGPTStatus, type GrokStatus, type ProviderKind } from '../api';
 import { Badge, Button, Card, ErrorBox, Field, Input, Loading, Modal, Textarea, Toggle, cx, toast, toastError } from '../components/ui';
 import { setQuery, useLocation } from '../router';
 
@@ -42,6 +42,12 @@ const KIND: Record<ProviderKind, { subtitle: string; intro: ReactNode; key?: { l
     temperature: false,
     modelPlaceholder: 'leer = erstes Modell des Kontos',
   },
+  grok: {
+    subtitle: 'Abo-Login',
+    intro: 'Dein SuperGrok- oder X-Premium+-Abo statt API-Key. Die Nutzung zählt auf dein Grok-Kontingent.',
+    temperature: true,
+    modelPlaceholder: 'grok-4.7',
+  },
   custom: {
     subtitle: 'OpenAI-kompatibel',
     intro: 'Jeder OpenAI-kompatible Endpoint: Ollama, LM Studio, LiteLLM, vLLM, Groq …',
@@ -54,7 +60,7 @@ const KIND: Record<ProviderKind, { subtitle: string; intro: ReactNode; key?: { l
 
 const GROUPS: { label: string; filter: (p: AiProvider) => boolean }[] = [
   { label: 'Mit API-Key', filter: (p) => p.kind === 'openai' || p.kind === 'anthropic' || p.kind === 'openrouter' },
-  { label: 'Mit Abo', filter: (p) => p.kind === 'chatgpt' },
+  { label: 'Mit Abo', filter: (p) => p.kind === 'chatgpt' || p.kind === 'grok' },
   { label: 'Eigene Anbieter', filter: (p) => p.kind === 'custom' },
 ];
 
@@ -335,6 +341,7 @@ function ProviderPage({ provider: p, onDirty, onDeleted }: { provider: AiProvide
         {p.active && dirty && <p className="mt-2 text-xs text-fg-3">Das ist der aktive Anbieter – Speichern gilt sofort für den Bot.</p>}
       </Card>
       {p.kind === 'chatgpt' && <ChatGPTCard />}
+      {p.kind === 'grok' && <GrokCard />}
     </div>
   );
 }
@@ -480,3 +487,118 @@ function ChatGPTCard() {
   );
 }
 
+
+/**
+ * Grok plan via xAI's device-code sign-in: we show a code, the admin confirms it on xAI's page (any device),
+ * and the server picks up the tokens on its own – no address to copy back.
+ */
+function GrokCard() {
+  const q = useQuery({
+    queryKey: ['grok'],
+    queryFn: () => api<GrokStatus>('/grok'),
+    // While a code waits for confirmation, check every few seconds whether it went through.
+    refetchInterval: (query) => (query.state.data?.pending ? 3000 : false),
+  });
+  const s = q.data;
+  const [wasPending, setWasPending] = useState(false);
+  if (s?.pending && !wasPending) setWasPending(true);
+  if (s && !s.pending && wasPending) {
+    setWasPending(false);
+    if (s.connected) {
+      toast('Grok verbunden');
+      void queryClient.invalidateQueries({ queryKey: ['llm-providers'] });
+    }
+  }
+
+  const start = useMutation({
+    mutationFn: () => api<GrokStatus>('/grok/login', { body: {} }),
+    onSuccess: (r) => {
+      queryClient.setQueryData(['grok'], r);
+      if (r.pending) window.open(r.pending.url, '_blank', 'noopener');
+    },
+    onError: toastError,
+  });
+  const cancel = useMutation({
+    mutationFn: () => api<GrokStatus>('/grok/cancel', { body: {} }),
+    onSuccess: (r) => queryClient.setQueryData(['grok'], r),
+    onError: toastError,
+  });
+  const logout = useMutation({
+    mutationFn: () => api<{ revoked: boolean; status: GrokStatus }>('/grok/logout', { body: {} }),
+    onSuccess: (r) => {
+      queryClient.setQueryData(['grok'], r.status);
+      void queryClient.invalidateQueries({ queryKey: ['llm-providers'] });
+      toast(r.revoked ? 'Grok getrennt' : 'Lokal getrennt – der Widerruf bei xAI wurde nicht bestätigt. Unter accounts.x.ai die App-Verbindung entfernen.', r.revoked ? 'ok' : 'info');
+    },
+    onError: toastError,
+  });
+
+  return (
+    <Card title="Grok-Abo nutzen" actions={s?.connected && <Badge tone="ok">verbunden</Badge>}>
+      {q.isPending ? (
+        <Loading />
+      ) : q.isError ? (
+        <ErrorBox error={q.error} />
+      ) : (
+        <div className="space-y-4 text-[13px]">
+          {s!.connected ? (
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <span className="inline-flex items-center gap-1.5">
+                <CheckCircle2 className="size-4 text-ok" />
+                Verbunden{s!.email ? <> als <strong>{s!.email}</strong></> : null}
+              </span>
+              <span className="flex-1" />
+              <Button size="sm" variant="ghost" loading={start.isPending} disabled={!!s!.pending} onClick={() => start.mutate()}>
+                Neu anmelden
+              </Button>
+              <Button size="sm" variant="ghost" icon={<LogOut className="size-3.5" />} loading={logout.isPending} onClick={() => logout.mutate()}>
+                Trennen
+              </Button>
+            </div>
+          ) : (
+            <p className="text-fg-2">
+              Beantworte Nachrichten mit den Grok-Modellen deines xAI-Kontos statt mit einem API-Key. Welche Abos das dürfen, entscheidet xAI (SuperGrok, X Premium+). Meldet der Test nach der Anmeldung „HTTP 403“, ist dein Abo dafür
+              nicht freigeschaltet – dann einen eigenen Anbieter mit xAI-API-Key anlegen.
+            </p>
+          )}
+          {s!.error && !s!.pending && (
+            <p className="inline-flex items-center gap-1.5 text-danger">
+              <XCircle className="size-3.5 shrink-0" /> {s!.error}
+            </p>
+          )}
+          {!s!.connected && !s!.pending && (
+            <Button variant="primary" loading={start.isPending} onClick={() => start.mutate()}>
+              Mit Grok anmelden
+            </Button>
+          )}
+          {s!.pending && (
+            <div className="space-y-3 rounded-lg bg-surface-2 p-3">
+              <ol className="list-decimal space-y-1 pl-5 text-fg-2">
+                <li>
+                  Im neuen Tab bei xAI anmelden.{' '}
+                  <a className="text-accent-text hover:underline" href={s!.pending.url} target="_blank" rel="noreferrer">
+                    Tab nicht aufgegangen?
+                  </a>
+                </li>
+                <li>Prüfen, dass dort dieser Code steht, und bestätigen:</li>
+              </ol>
+              <div className="flex items-center gap-2">
+                <code className="rounded-lg bg-surface px-3 py-1.5 font-mono text-lg tracking-widest ring-1 ring-line">{s!.pending.userCode}</code>
+                <Button size="sm" variant="ghost" icon={<Copy className="size-3.5" />} onClick={() => void navigator.clipboard?.writeText(s!.pending!.userCode).then(() => toast('Code kopiert', 'info'))}>
+                  Kopieren
+                </Button>
+              </div>
+              <p className="text-fg-3">
+                Danach verbindet sich der Bot von selbst – diese Seite muss nur offen bleiben, um es anzuzeigen. Der Code gilt bis {new Date(s!.pending.expiresAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr.
+                Auf der xAI-Seite kann „Grok CLI“ stehen: xAI nutzt für Fremd-Apps einen gemeinsamen Anmelde-Client.
+              </p>
+              <Button variant="ghost" loading={cancel.isPending} onClick={() => cancel.mutate()}>
+                Abbrechen
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}

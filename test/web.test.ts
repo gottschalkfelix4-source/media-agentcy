@@ -272,7 +272,7 @@ test('AI providers: seeded from the running settings, each keeps its own values,
     const first = await req('GET', '/llm/providers');
     assert.equal(first.status, 200);
     const names = first.json.providers.map((p: any) => p.id);
-    for (const b of ['openai', 'anthropic', 'openrouter', 'chatgpt']) assert.ok(names.includes(b), `built-in ${b}`);
+    for (const b of ['openai', 'anthropic', 'openrouter', 'chatgpt', 'grok']) assert.ok(names.includes(b), `built-in ${b}`);
     // The env runs a custom endpoint: it became the active custom entry, with its key kept server-side.
     const custom = first.json.providers.find((p: any) => p.id === first.json.active);
     assert.equal(custom.kind, 'custom');
@@ -329,6 +329,16 @@ test('ChatGPT sign-in endpoints: status, start (with the loopback redirect), bad
   const bad = await req('POST', '/chatgpt/callback', { url: 'http://127.0.0.1:1455/auth/callback?code=x&state=falsch' });
   assert.equal(bad.status, 400);
   assert.match(bad.json.error, /keinem offenen Versuch/);
+});
+
+test('Grok sign-in endpoints: status, cancel, logout without an account', async () => {
+  const status = await req('GET', '/grok');
+  assert.equal(status.status, 200);
+  assert.equal(status.json.connected, false);
+  assert.match(status.json.authFile, /grok-auth\.json$/);
+  assert.equal((await req('POST', '/grok/cancel', {})).json.pending, undefined);
+  const out = await req('POST', '/grok/logout', {});
+  assert.equal(out.json.revoked, true);
 });
 
 test('logout ends the session', async () => {

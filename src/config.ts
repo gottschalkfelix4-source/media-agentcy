@@ -43,7 +43,7 @@ const schema = z.object({
   ONBOARD_JELLYFIN: bool(false),
   ONBOARD_GUIDE: optStr,
 
-  LLM_PROVIDER: z.enum(['openrouter', 'openai', 'anthropic', 'chatgpt', 'custom']).default('openrouter'),
+  LLM_PROVIDER: z.enum(['openrouter', 'openai', 'anthropic', 'chatgpt', 'grok', 'custom']).default('openrouter'),
   LLM_BASE_URL: url,
   LLM_API_KEY: optStr,
   LLM_MODEL: optStr,
@@ -59,6 +59,7 @@ const schema = z.object({
   STT_MODEL: z.string().default('whisper-1'),
   VOICE_MAX_SECONDS: int(120),
   CHATGPT_AUTH_FILE: optStr,
+  GROK_AUTH_FILE: optStr,
 
   JELLYFIN_URL: url,
   JELLYFIN_API_KEY: optStr,
@@ -122,6 +123,7 @@ const defaultBaseUrl: Record<Env['LLM_PROVIDER'], string | undefined> = {
   openai: 'https://api.openai.com/v1',
   anthropic: undefined, // the SDK's default (https://api.anthropic.com)
   chatgpt: 'https://api.openai.com/v1',
+  grok: 'https://api.x.ai/v1',
   custom: undefined,
 };
 
@@ -131,6 +133,7 @@ export const DEFAULT_MODEL: Record<Env['LLM_PROVIDER'], string> = {
   openai: 'openai/gpt-4.1-mini',
   anthropic: 'claude-opus-5-5',
   chatgpt: '', // first model of the signed-in account
+  grok: 'grok-4.7',
   custom: 'openai/gpt-4.1-mini',
 };
 
@@ -151,6 +154,7 @@ function derive(env: Env) {
       temperature: env.LLM_TEMPERATURE,
       vision: env.LLM_VISION,
       chatgptAuthFile: env.CHATGPT_AUTH_FILE ?? path.join(dataDir, 'chatgpt-auth.json'),
+      grokAuthFile: env.GROK_AUTH_FILE ?? path.join(dataDir, 'grok-auth.json'),
     },
   };
 }

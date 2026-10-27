@@ -3,13 +3,13 @@ import type { Repo } from '../db/repo.js';
 import type { SettingsPatch, SettingsStore } from './store.js';
 
 /**
- * AI providers as a list: OpenAI, Anthropic and OpenRouter (API key), the ChatGPT plan (sign-in) and any number
+ * AI providers as a list: OpenAI, Anthropic and OpenRouter (API key), the ChatGPT and Grok plans (sign-in) and any number
  * of custom OpenAI-compatible endpoints. Each keeps its own URL, key and models, so switching never means typing
  * them again. Exactly one is active; its values are what the LLM_* settings hold.
  * Stored in the database (API keys included, never sent to the browser).
  */
 
-export const PROVIDER_KINDS = ['openai', 'anthropic', 'openrouter', 'chatgpt', 'custom'] as const;
+export const PROVIDER_KINDS = ['openai', 'anthropic', 'openrouter', 'chatgpt', 'grok', 'custom'] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
 export const VALUE_KEYS = ['LLM_BASE_URL', 'LLM_API_KEY', 'LLM_MODEL', 'LLM_MODEL_ADMIN', 'LLM_TEMPERATURE', 'LLM_VISION'] as const;
 type ValueKey = (typeof VALUE_KEYS)[number];
@@ -24,6 +24,7 @@ export const BUILTIN: { kind: Exclude<ProviderKind, 'custom'>; name: string }[] 
   { kind: 'anthropic', name: 'Anthropic' },
   { kind: 'openrouter', name: 'OpenRouter' },
   { kind: 'chatgpt', name: 'ChatGPT-Abo' },
+  { kind: 'grok', name: 'Grok-Abo' },
 ];
 
 interface Entry {
@@ -62,8 +63,8 @@ export class LlmProviders {
   constructor(
     private readonly repo: Repo,
     private readonly settings: SettingsStore,
-    /** Whether the ChatGPT plan is signed in – that's its "configured". */
-    private readonly chatgptConnected: () => boolean,
+    /** Whether a plan (ChatGPT, Grok) is signed in – that's its "configured". */
+    private readonly signedIn: (kind: 'chatgpt' | 'grok') => boolean,
   ) {}
 
   list(): { active: string; providers: ProviderView[] } {
@@ -136,7 +137,7 @@ export class LlmProviders {
       name: e.name,
       builtin: e.kind !== 'custom',
       active: e.id === active,
-      configured: e.kind === 'chatgpt' ? this.chatgptConnected() : e.kind === 'custom' ? !!e.values.LLM_BASE_URL : !!key,
+      configured: e.kind === 'chatgpt' || e.kind === 'grok' ? this.signedIn(e.kind) : e.kind === 'custom' ? !!e.values.LLM_BASE_URL : !!key,
       baseUrl: e.values.LLM_BASE_URL,
       model: e.values.LLM_MODEL,
       adminModel: e.values.LLM_MODEL_ADMIN,

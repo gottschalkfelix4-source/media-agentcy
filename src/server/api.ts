@@ -14,6 +14,7 @@ import { bus, type AppEvent } from '../events.js';
 import { createServices, enabledServices, pingAll, type Services } from '../integrations/index.js';
 import { createProvider, LLMError } from '../llm/index.js';
 import { chatgptAuth, REDIRECT_URI } from '../llm/chatgptAuth.js';
+import { grokAuth } from '../llm/grokAuth.js';
 import { recentLogs } from '../logger.js';
 import { LlmProviders, VALUE_KEYS, type ProviderPatch } from '../settings/providers.js';
 import { GROUPS } from '../settings/registry.js';
@@ -826,7 +827,8 @@ export function createApi(deps: ApiDeps) {
   // ---------------------------------------------------------------- AI providers (one page each)
 
   const gpt = () => chatgptAuth(ctx.config.llm.chatgptAuthFile);
-  const providers = new LlmProviders(repo, settings, () => gpt().status().connected);
+  const grok = () => grokAuth(ctx.config.llm.grokAuthFile);
+  const providers = new LlmProviders(repo, settings, (kind) => (kind === 'chatgpt' ? gpt() : grok()).status().connected);
   const providerDraft = z
     .object(Object.fromEntries(VALUE_KEYS.map((k) => [k, z.string().max(4000).nullable().optional()])) as Record<(typeof VALUE_KEYS)[number], z.ZodOptional<z.ZodNullable<z.ZodString>>>)
     .default({});
@@ -937,6 +939,23 @@ export function createApi(deps: ApiDeps) {
     const { revoked } = await gpt().logout();
     ctx.logger.info({ revoked }, 'ChatGPT getrennt');
     return c.json({ revoked, status: gpt().status() });
+  });
+
+  // ---------------------------------------------------------------- Grok plan (xAI device-code sign-in)
+
+  api.get('/grok', (c) => c.json(grok().status()));
+
+  api.post('/grok/login', async (c) => c.json(await grok().startLogin().catch(asBadRequest)));
+
+  api.post('/grok/cancel', (c) => {
+    grok().cancelLogin();
+    return c.json(grok().status());
+  });
+
+  api.post('/grok/logout', async (c) => {
+    const { revoked } = await grok().logout();
+    ctx.logger.info({ revoked }, 'Grok getrennt');
+    return c.json({ revoked, status: grok().status() });
   });
 
   return api;

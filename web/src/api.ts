@@ -277,7 +277,16 @@ export interface ChatGPTStatus {
   authFile: string;
 }
 
-export type ProviderKind = 'openai' | 'anthropic' | 'openrouter' | 'chatgpt' | 'custom';
+export interface GrokStatus {
+  connected: boolean;
+  email?: string;
+  expiresAt?: string;
+  pending?: { userCode: string; url: string; expiresAt: string };
+  error?: string;
+  authFile: string;
+}
+
+export type ProviderKind = 'openai' | 'anthropic' | 'openrouter' | 'chatgpt' | 'grok' | 'custom';
 
 export interface AiProvider {
   id: string;

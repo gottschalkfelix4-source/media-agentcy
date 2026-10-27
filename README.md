@@ -38,7 +38,7 @@
 | 🧠 **Gedächtnis pro Nutzer** | Fakten (Geräte, Vorlieben …), laufende Zusammenfassung früherer Gespräche, Ticket- und Anfrageverlauf |
 | 👥 **Nutzer-Import** | Konten aus Jellyfin, Plex und Jellyseerr auf einen Blick, zusammengeführt pro Person. WhatsApp-Nummer eintragen, importieren, fertig verknüpft |
 | 🖥️ **Web-Oberfläche** | Nutzer freischalten, Chats mitlesen und übernehmen, Tickets, Token-Verbrauch, alle Einstellungen live, am Handy und am Desktop |
-| 🔌 **KI frei wählbar** | OpenRouter, OpenAI, Anthropic Claude, dein ChatGPT-Abo oder jeder OpenAI-kompatible Endpoint (Ollama, LM Studio, LiteLLM …) |
+| 🔌 **KI frei wählbar** | OpenRouter, OpenAI, Anthropic Claude, dein ChatGPT- oder Grok-Abo oder jeder OpenAI-kompatible Endpoint (Ollama, LM Studio, LiteLLM …) |
 
 ## Screenshots
 
@@ -202,6 +202,7 @@ Damit Hermes etwas reparieren kann, braucht er Zugriff auf den Server (z. B. SSH
 | OpenRouter | [openrouter.ai/keys](https://openrouter.ai/keys), Modelle mit Tool-Calling: [Liste](https://openrouter.ai/models?supported_parameters=tools) |
 | Anthropic | API-Key von [platform.claude.com](https://platform.claude.com/) (ein Claude-Pro/Max-Abo lässt sich laut Anthropic nicht in fremden Apps nutzen). Standardmodell `claude-opus-5-5`, Prompt-Caching automatisch. |
 | ChatGPT-Abo | Kein Key: Einstellungen → KI-Anbieter → **Continue with ChatGPT**. OpenAI erlaubt als Rücksprung nur `127.0.0.1` – nach der Zustimmung lädt die Seite deshalb nicht. Die Adresse aus der Adressleiste kopieren und in der Oberfläche einfügen. Verbrauch und Limits: [ChatGPT → Einstellungen → Nutzung](https://chatgpt.com/settings/usage). |
+| Grok-Abo | Kein Key: Einstellungen → KI-Anbieter → Grok-Abo → **Mit Grok anmelden**. Die Oberfläche zeigt einen Code, den du auf der xAI-Seite bestätigst (geht von jedem Gerät, kein Kopieren von Adressen). Der Bot verbindet sich danach von selbst. Welche Abos die API nutzen dürfen, entscheidet xAI (SuperGrok, X Premium+); bei „HTTP 403“ einen eigenen Anbieter mit xAI-API-Key (`https://api.x.ai/v1`) anlegen. |
 
 Unter Einstellungen → KI-Anbieter hat jeder Anbieter seine eigene Seite mit eigenem Key, eigener URL und eigenen Modellen. Mit **+ Anbieter hinzufügen** legst du beliebig viele eigene Endpoints an; **Diesen Anbieter verwenden** schaltet den Bot sofort um.
 
@@ -301,7 +302,8 @@ Der **Admin-Agent** (deine Nummer) kann zusätzlich Nutzer freischalten, sperren
 - Für **Wochenrückblick** und Wartungs-Ablauf zählt die Zeitzone des Containers (`TZ`, z. B. `Europe/Berlin`).
 - Baileys ist eine **inoffizielle** WhatsApp-Bibliothek. Der Bot verschickt nur Antworten und Benachrichtigungen, mit Abstand zwischen den Nachrichten. Für Massen-Broadcasts ist er nicht gedacht.
 - Das **ChatGPT-Abo** läuft über OpenAIs „Sign in with ChatGPT“ für Open-Source-Apps. Das ist bei OpenAI noch eine Vorschau; Einschränkungen siehe [Preview limitations](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations).
-- Gegen echte Server noch nicht getestet: Ombi (deren API ist uneinheitlich), Plex-Details, ChatGPT-Anbieter. Die automatischen Tests decken Jellyseerr, Radarr und Jellyfin mit einem Fake-Server ab.
+- Das **Grok-Abo** nutzt xAIs Anmeldung per Code (OAuth Device Flow) mit dem gemeinsamen Client, den xAI für Fremd-Apps wie Hermes Agent, OpenClaw und OpenCode bereitstellt – auf der Bestätigungsseite kann deshalb „Grok CLI“ stehen. Eine eigene Registrierung für Apps bietet xAI nicht an.
+- Gegen echte Server noch nicht getestet: Ombi (deren API ist uneinheitlich), Plex-Details, ChatGPT- und Grok-Anbieter. Die automatischen Tests decken Jellyseerr, Radarr und Jellyfin mit einem Fake-Server ab.
 
 ## Entwicklung
 
@@ -354,7 +356,7 @@ src/
   agent/        Agent-Schleife, Prompts, Nutzer- & Admin-Tools
   db/           SQLite-Schema + Repository
   integrations/ Jellyfin, Plex, Jellyseerr/Overseerr, Ombi, Sonarr, Radarr
-  llm/          OpenAI-kompatibel (OpenRouter/OpenAI/custom), Anthropic (Messages API), ChatGPT-Abo (Sign in with ChatGPT)
+  llm/          OpenAI-kompatibel (OpenRouter/OpenAI/custom), Anthropic (Messages API), ChatGPT-Abo (Sign in with ChatGPT), Grok-Abo (xAI Device Flow)
   messaging/    Router: Onboarding, Zugriff, Debounce, Warteschlangen
   notifier/     Poller: fertige Anfragen, Auto-Fix-Follow-up
   whatsapp/     Baileys-Client (QR-Login, LID→Telefonnummer, Bilder)

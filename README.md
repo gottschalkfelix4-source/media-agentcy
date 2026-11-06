@@ -336,6 +336,10 @@ npm run screenshots
 
 **Image bauen und in die Registry schieben:**
 
+Das passiert automatisch: Bei jedem Push auf `master` baut der GitHub-Workflow `.github/workflows/docker.yml` das Image und schiebt es als `latest` und mit der Version aus `package.json` nach ghcr.io. Unter Actions → Docker-Image → „Run workflow“ lässt er sich auch von Hand starten.
+
+Von Hand geht es so:
+
 ```bash
 gh auth refresh -s write:packages
 gh auth token | docker login ghcr.io -u gottschalkfelix4-source --password-stdin

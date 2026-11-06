@@ -6,6 +6,7 @@ import { collectNew } from '../notifier/digest.js';
 import { notifyAdmins, userLabel } from './context.js';
 import { offTopic } from './abuse.js';
 import { handToHermes, hermesAuto } from './hermes.js';
+import { answerCleanup } from './cleanupTools.js';
 import { checkRequest, requestFix } from './requestTools.js';
 import { ensureTicket } from './tickets.js';
 import { defineTool, ToolError, type Tool, type ToolContext } from './tool.js';
@@ -625,5 +626,6 @@ export const userTools: Tool[] = [
   serviceStatus,
   whatsNew,
   setDigest,
+  answerCleanup,
   offTopic,
 ] as unknown as Tool[];

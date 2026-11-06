@@ -1,5 +1,5 @@
 import type { Config } from '../config.js';
-import type { Fact, Repo, Ticket, User } from '../db/repo.js';
+import type { CleanupOffer, Fact, Repo, Ticket, User } from '../db/repo.js';
 import { enabledServices, type Services } from '../integrations/index.js';
 import { disruptionPromptBlock } from '../notifier/outage.js';
 import { userLabel } from './context.js';
@@ -25,6 +25,11 @@ function factsBlock(facts: Fact[]) {
 function ticketsBlock(tickets: Ticket[]) {
   if (!tickets.length) return '(keine offenen Tickets)';
   return tickets.map((t) => `- #${t.id} [${t.status}] ${t.title} (seit ${t.created_at.slice(0, 10)})`).join('\n');
+}
+
+function cleanupBlock(offers: CleanupOffer[]) {
+  if (!offers.length) return '(keine)';
+  return offers.map((o) => `- Angebot ${o.id}: ${o.media_type === 'movie' ? 'Film' : 'Serie'} "${o.title}" (gefragt am ${o.asked_at.slice(0, 10)})`).join('\n');
 }
 
 function extraBlock(config: Config) {
@@ -97,6 +102,12 @@ ${
 5. Dem Nutzer ehrlich sagen, was du gemacht hast und wie es weitergeht. Bei replace_file/search_missing: "Ich melde mich, sobald die neue Version da ist" (passiert automatisch).
 - Problem nur auf einem Gerät (Ruckeln, App-Absturz, Transcoding)? → Erst Tipps geben (App neu starten, Qualität reduzieren, Direktwiedergabe), Transcoding-Gründe aus check_playback verständlich erklären. Nicht vorschnell Dateien ersetzen.
 
+## Ablauf Aufräumen (Löschfrage)
+- Das System fragt dich von sich aus, wenn der Nutzer einen Film oder eine Serie selbst angefragt und komplett gesehen hat. Dann siehst du unten unter "Offene Löschfragen" ein Angebot.
+- Stellst du die Frage (Nachricht [Aufräumen]) oder antwortet der Nutzer darauf: Ja → answer_cleanup mit agree=true, Nein → agree=false. Ohne klare Antwort nichts festhalten, höchstens einmal nachfragen.
+- Nach einem Ja sagst du, dass ${config.ADMIN_NAME} die Löschung noch freigibt. Du löschst nie selbst und versprichst keinen Zeitpunkt.
+- Nenne nie, wer den Titel sonst noch gesehen oder angefragt hat. Nach einem Nein nicht nachhaken.
+
 ## Gedächtnis
 - Nutze remember_fact aktiv für dauerhafte, nützliche Infos (Name, Geräte/Apps, Genres, Sprach-/Untertitel-Vorlieben, wiederkehrende Probleme). Veraltetes mit forget_fact löschen.
 - Keine Passwörter, Zahlungsdaten oder andere sensible Daten speichern.
@@ -128,7 +139,10 @@ ${factsBlock(facts)}
 ${user.summary ?? '(erstes Gespräch)'}
 
 ## Offene Tickets
-${ticketsBlock(tickets)}`;
+${ticketsBlock(tickets)}
+
+## Offene Löschfragen
+${cleanupBlock(repo.openCleanupOffers(user.id))}`;
 }
 
 export function adminSystemPrompt(config: Config, services: Services, repo: Repo, admin: User) {
@@ -145,7 +159,8 @@ ${disruptionPromptBlock(repo, config.ADMIN_NAME)}
 - Du bist die rechte Hand des Admins: Tickets besprechen, Ursachen analysieren, Nutzer verwalten, Medien prüfen/reparieren, Nutzern Nachrichten ausrichten.
 - Eskalierte Tickets hast du dem Admin selbst geschickt (siehe Verlauf). Bezieht sich der Admin auf "das Problem" oder "den Nutzer", ist meist das letzte Ticket gemeint.
 - Sagt der Admin "sag X, dass…" → message_user (verbatim=false, außer er will es wörtlich). Ist ein Ticket erledigt → resolve_ticket. Will der Admin ein Ticket anlegen (für sich oder einen Nutzer) → create_ticket.
-${hermesEnabled(config) ? `- Hermes ist der Agent des Admins, der auf dem Server nach dem Rechten sieht. Eskalierte Tickets ab Schwere „${config.HERMES_MIN_SEVERITY}“ und erkannte Ausfälle bekommt er automatisch; meldet er „fixed“, sagt das System dem Nutzer Bescheid. Will der Admin, dass Hermes sich ein Ticket ansieht → hand_to_hermes.\n` : ''}- Neue Nummern (pending) schaltest du mit set_user_status frei, Konten verknüpfst du mit link_user (list_media_accounts hilft).
+${hermesEnabled(config) ? `- Hermes ist der Agent des Admins, der auf dem Server nach dem Rechten sieht. Eskalierte Tickets ab Schwere „${config.HERMES_MIN_SEVERITY}“ und erkannte Ausfälle bekommt er automatisch; meldet er „fixed“, sagt das System dem Nutzer Bescheid. Will der Admin, dass Hermes sich ein Ticket ansieht → hand_to_hermes.\n` : ''}- Löschfreigaben: Hat ein Nutzer zugestimmt, einen komplett gesehenen Titel zu löschen, kommt eine Nachricht mit Angebotsnummer. Sagt der Admin "löschen" → decide_cleanup (delete), "behalten" → keep. list_cleanup_offers zeigt alle wartenden.
+- Neue Nummern (pending) schaltest du mit set_user_status frei, Konten verknüpfst du mit link_user (list_media_accounts hilft).
 - Sei technisch und präzise, gern mit Details (Pfade, Codecs, Release-Namen). Bestätige ausgeführte Aktionen knapp.
 - Vor folgenreichen Aktionen (broadcast, Dateien mehrerer Titel ersetzen, Nutzer sperren) kurz rückfragen, außer der Admin war eindeutig.
 - Nachrichten mit [SYSTEM-EREIGNIS] kommen vom System – fasse sie für den Admin zusammen.

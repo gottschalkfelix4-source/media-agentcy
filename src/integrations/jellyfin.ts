@@ -24,6 +24,13 @@ interface JfItem {
   DateCreated?: string;
   MediaSources?: { Path?: string; Container?: string; Size?: number; Bitrate?: number; MediaStreams?: JfMediaStream[] }[];
   MediaStreams?: JfMediaStream[];
+  UserData?: { Played?: boolean; PlayCount?: number };
+}
+
+/** How much of a title one user has seen. total = 0: nothing to watch yet / unknown. */
+export interface WatchState {
+  total: number;
+  played: number;
 }
 
 export class JellyfinClient {
@@ -95,6 +102,24 @@ export class JellyfinClient {
       Fields: 'Path,MediaSources',
     });
     return res.Items.map((e) => summarizeItem(e));
+  }
+
+  /** Library entry of a movie or series by TMDB id (the search by name is narrowed down by the provider id). */
+  async findByTmdb(type: 'movie' | 'tv', tmdbId: number, title: string) {
+    const hits = await this.search(title, type === 'movie' ? 'Movie' : 'Series', 25);
+    return hits.find((h) => h.tmdbId === String(tmdbId));
+  }
+
+  /** Played state of a movie or of the regular episodes (no specials) of a series for one Jellyfin user. */
+  async watchState(userId: string, itemId: string, type: 'movie' | 'tv'): Promise<WatchState> {
+    if (type === 'movie') {
+      const res = await this.api.get<{ Items: JfItem[] }>('/Items', { Ids: itemId, userId, Fields: 'UserData' });
+      const it = res.Items[0];
+      return it ? { total: 1, played: it.UserData?.Played ? 1 : 0 } : { total: 0, played: 0 };
+    }
+    const res = await this.api.get<{ Items: JfItem[] }>(`/Shows/${seg(itemId)}/Episodes`, { userId, Fields: 'UserData', isMissing: false });
+    const eps = res.Items.filter((e) => (e.ParentIndexNumber ?? 0) > 0);
+    return { total: eps.length, played: eps.filter((e) => e.UserData?.Played).length };
   }
 
   async refreshItem(id: string) {

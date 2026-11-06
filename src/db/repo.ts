@@ -92,6 +92,20 @@ export interface BotRequest {
   via: 'web' | null;
 }
 
+export type CleanupStatus = 'asked' | 'agreed' | 'declined' | 'deleted' | 'rejected';
+
+export interface CleanupOffer {
+  id: number;
+  user_id: number;
+  tmdb_id: number;
+  media_type: 'movie' | 'tv';
+  title: string;
+  status: CleanupStatus;
+  ticket_id: number | null;
+  asked_at: string;
+  answered_at: string | null;
+}
+
 export interface Watch {
   id: number;
   user_id: number;
@@ -408,6 +422,44 @@ export class Repo {
     this.run('INSERT OR IGNORE INTO notified (source, external_id, user_id) VALUES (?, ?, ?)', source, externalId, userId);
   }
 
+  // ---------- cleanup offers ----------
+
+  createCleanupOffer(o: Pick<CleanupOffer, 'user_id' | 'tmdb_id' | 'media_type' | 'title'>) {
+    const res = this.run('INSERT INTO cleanup_offers (user_id, tmdb_id, media_type, title) VALUES (?, ?, ?, ?)', o.user_id, o.tmdb_id, o.media_type, o.title);
+    return this.getCleanupOffer(Number(res.lastInsertRowid))!;
+  }
+
+  getCleanupOffer(id: number) {
+    return this.get<CleanupOffer>('SELECT * FROM cleanup_offers WHERE id = ?', id);
+  }
+
+  /** Offers for this title and user, whatever the outcome (a declined one is never asked again). */
+  cleanupOfferFor(userId: number, tmdbId: number, mediaType: string) {
+    return this.get<CleanupOffer>('SELECT * FROM cleanup_offers WHERE user_id = ? AND tmdb_id = ? AND media_type = ? ORDER BY id DESC', userId, tmdbId, mediaType);
+  }
+
+  /** Newest offer of the user, e.g. to ask at most one question per week. */
+  lastCleanupOffer(userId: number) {
+    return this.get<CleanupOffer>('SELECT * FROM cleanup_offers WHERE user_id = ? ORDER BY id DESC', userId);
+  }
+
+  openCleanupOffers(userId: number) {
+    return this.all<CleanupOffer>("SELECT * FROM cleanup_offers WHERE user_id = ? AND status = 'asked' ORDER BY id", userId);
+  }
+
+  listCleanupOffers(statuses: CleanupStatus[]) {
+    return this.all<CleanupOffer>(`SELECT * FROM cleanup_offers WHERE status IN (${statuses.map(() => '?').join(',')}) ORDER BY id`, ...statuses);
+  }
+
+  updateCleanupOffer(id: number, patch: { status: CleanupStatus; ticket_id?: number | null }) {
+    this.run(
+      "UPDATE cleanup_offers SET status = ?, ticket_id = COALESCE(?, ticket_id), answered_at = datetime('now') WHERE id = ?",
+      patch.status,
+      patch.ticket_id ?? null,
+      id,
+    );
+  }
+
   // ---------- watches ----------
 
   addWatch(w: Pick<Watch, 'user_id' | 'ticket_id' | 'kind' | 'label'> & { ref: unknown }) {
@@ -686,7 +738,7 @@ export class Repo {
   deleteUser(id: number) {
     this.db.exec('BEGIN');
     try {
-      for (const table of ['messages', 'facts', 'watches', 'bot_requests', 'tickets']) this.run(`DELETE FROM ${table} WHERE user_id = ?`, id);
+      for (const table of ['messages', 'facts', 'watches', 'bot_requests', 'cleanup_offers', 'tickets']) this.run(`DELETE FROM ${table} WHERE user_id = ?`, id);
       this.run('DELETE FROM notified WHERE user_id = ?', id);
       this.run('UPDATE action_log SET user_id = NULL WHERE user_id = ?', id);
       this.run('UPDATE llm_usage SET user_id = NULL WHERE user_id = ?', id);

@@ -1,4 +1,5 @@
-import { ApiClient, type RecentItem, seg } from './http.js';
+import { ApiClient, normalizeTitle, type RecentItem, seg } from './http.js';
+import type { WatchState } from './jellyfin.js';
 
 interface PlexMetadata {
   ratingKey: string;
@@ -10,6 +11,8 @@ interface PlexMetadata {
   index?: number;
   addedAt?: number;
   librarySectionID?: number;
+  grandparentRatingKey?: string;
+  Guid?: { id: string }[];
   Media?: {
     videoResolution?: string;
     videoCodec?: string;
@@ -103,6 +106,47 @@ export class PlexClient {
     return [{ ...owner, owner: true }, ...parseTvUsers(friends).map((f) => ({ ...f, owner: false }))]
       .filter((u) => u.title || u.username)
       .map((u) => ({ id: u.id, username: (u.title || u.username)!, email: u.email || undefined, owner: u.owner }));
+  }
+
+  /** Library entry of a movie or show by TMDB id (guid) or, without guid data, by an unambiguous title. */
+  async findByTmdb(type: 'movie' | 'tv', tmdbId: number, title: string) {
+    const res = await this.api.get<{ MediaContainer: { Hub?: { type: string; Metadata?: PlexMetadata[] }[] } }>('/hubs/search', {
+      query: title,
+      limit: 25,
+      includeGuids: 1,
+    });
+    const want = type === 'movie' ? 'movie' : 'show';
+    const items = (res.MediaContainer.Hub ?? []).filter((h) => h.type === want).flatMap((h) => h.Metadata ?? []);
+    const byGuid = items.find((m) => m.Guid?.some((g) => g.id === `tmdb://${tmdbId}`));
+    if (byGuid) return { ratingKey: byGuid.ratingKey };
+    const byTitle = items.filter((m) => normalizeTitle(m.title) === normalizeTitle(title));
+    return byTitle.length === 1 ? { ratingKey: byTitle[0].ratingKey } : undefined;
+  }
+
+  /** plex.tv name (as in sessions/users) → local account id, needed for the play history. */
+  private async accountId(username: string) {
+    const res = await this.api.get<{ MediaContainer: { Account?: { id: number; name: string }[] } }>('/accounts');
+    return res.MediaContainer.Account?.find((a) => a.name.toLowerCase() === username.toLowerCase())?.id;
+  }
+
+  /** What one Plex user has watched of a movie or of the regular episodes of a show, from the play history. */
+  async watchState(username: string, ratingKey: string, type: 'movie' | 'tv'): Promise<WatchState | undefined> {
+    const accountID = await this.accountId(username);
+    if (accountID === undefined) return undefined;
+    const history = (
+      await this.api.get<{ MediaContainer: { Metadata?: PlexMetadata[] } }>('/status/history/all', {
+        accountID,
+        sort: 'viewedAt:desc',
+        'X-Plex-Container-Start': 0,
+        'X-Plex-Container-Size': 5000,
+      })
+    ).MediaContainer.Metadata ?? [];
+    if (type === 'movie') return { total: 1, played: history.some((h) => h.ratingKey === ratingKey) ? 1 : 0 };
+    const leaves = (
+      await this.api.get<{ MediaContainer: { Metadata?: PlexMetadata[] } }>(`/library/metadata/${seg(ratingKey)}/allLeaves`)
+    ).MediaContainer.Metadata?.filter((e) => (e.parentIndex ?? 0) > 0) ?? [];
+    const seen = new Set(history.filter((h) => h.grandparentRatingKey === ratingKey).map((h) => h.ratingKey));
+    return { total: leaves.length, played: leaves.filter((e) => seen.has(e.ratingKey)).length };
   }
 
   async sessions(username?: string) {

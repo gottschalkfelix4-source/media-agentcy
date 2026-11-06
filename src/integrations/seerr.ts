@@ -101,11 +101,17 @@ export class SeerrClient {
       numberOfSeasons?: number;
       seasons?: { seasonNumber: number; episodeCount: number; name: string }[];
       mediaInfo?: {
+        id?: number;
         status: number;
         seasons?: { seasonNumber: number; status: number }[];
         requests?: { id: number; status: number; createdAt: string; requestedBy?: { id: number } }[];
       };
     }>(`/${seg(mediaType)}/${seg(tmdbId)}`, { language });
+  }
+
+  /** Removes the media entry (and its requests), so the title can be requested again after it was deleted from disk. */
+  async removeMedia(mediaInfoId: number) {
+    await this.api.delete(`/media/${seg(mediaInfoId)}`);
   }
 
   /** What the user sees before confirming a request: title, date, poster. */

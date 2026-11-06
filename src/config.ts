@@ -86,6 +86,7 @@ const schema = z.object({
   AUTOFIX_MAX_REPLACEMENTS_PER_DAY: int(3),
   ADMIN_NOTIFY_AUTOFIX: bool(true),
   STUCK_REQUEST_DAYS: int(3),
+  CLEANUP_OFFERS: bool(true),
   OUTAGE_DETECTION: bool(true),
 
   HERMES_WEBHOOK_URL: url,

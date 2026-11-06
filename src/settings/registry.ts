@@ -182,6 +182,14 @@ export const SETTINGS: SettingDef[] = [
   { key: 'AUTOFIX_MAX_REPLACEMENTS_PER_DAY', group: 'autofix', label: 'Max. Ersetzungen pro Nutzer und Tag', type: 'int', default: '3' },
   { key: 'ADMIN_NOTIFY_AUTOFIX', group: 'autofix', label: 'Mich bei jedem Ersetzen informieren', type: 'bool', default: 'true', help: 'Gilt auch für Anfragen, die der Bot von sich aus wieder anstößt.' },
   {
+    key: 'CLEANUP_OFFERS',
+    group: 'autofix',
+    label: 'Nach komplett gesehenen Titeln fragen, ob sie gelöscht werden können',
+    type: 'bool',
+    default: 'true',
+    help: 'Gilt für Filme und beendete Serien, die der Nutzer selbst angefragt und ganz gesehen hat und die sonst niemand mehr offen hat. Höchstens eine Frage pro Nutzer und Woche. Gelöscht wird erst, wenn der Nutzer Ja sagt und du es freigibst.',
+  },
+  {
     key: 'STUCK_REQUEST_DAYS',
     group: 'autofix',
     label: 'Hängende Anfragen selbst anstoßen nach (Tagen)',

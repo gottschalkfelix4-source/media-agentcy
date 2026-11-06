@@ -161,6 +161,20 @@ const MIGRATIONS: string[] = [
   CREATE INDEX idx_action_user ON action_log(user_id, action, created_at);
   CREATE INDEX idx_action_ticket ON action_log(ticket_id);
   `,
+  `
+  CREATE TABLE cleanup_offers (            -- "fully watched, may it be deleted?" questions to the requester
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    tmdb_id INTEGER NOT NULL,
+    media_type TEXT NOT NULL,              -- movie | tv
+    title TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'asked',  -- asked | agreed | declined | deleted | rejected
+    ticket_id INTEGER REFERENCES tickets(id) ON DELETE SET NULL,
+    asked_at TEXT NOT NULL DEFAULT (datetime('now')),
+    answered_at TEXT
+  );
+  CREATE INDEX idx_cleanup_user ON cleanup_offers(user_id, status);
+  `,
 ];
 
 export function openDatabase(file: string): DatabaseSync {

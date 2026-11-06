@@ -199,6 +199,12 @@ export class RadarrClient extends ArrBase {
     return this.command('RefreshMovie', { movieIds: [movieId] });
   }
 
+  /** Removes the movie including its files. */
+  async deleteMovie(movieId: number) {
+    await this.api.delete(`/movie/${seg(movieId)}`, { deleteFiles: true, addImportExclusion: false });
+    this.cache = undefined;
+  }
+
   /** Deletes the current file and searches for a new release. */
   async replaceFile(movieId: number) {
     const movie = await this.api.get<RadarrMovie>(`/movie/${seg(movieId)}`);
@@ -339,6 +345,12 @@ export class SonarrClient extends ArrBase {
 
   refresh(seriesId: number) {
     return this.command('RefreshSeries', { seriesId });
+  }
+
+  /** Removes the series including all files. */
+  async deleteSeries(seriesId: number) {
+    await this.api.delete(`/series/${seg(seriesId)}`, { deleteFiles: true, addImportListExclusion: false });
+    this.cache = undefined;
   }
 
   /** Deletes the files of the given episodes and searches for new releases. */

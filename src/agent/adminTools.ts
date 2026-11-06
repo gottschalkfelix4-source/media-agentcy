@@ -7,6 +7,7 @@ import { onboardOnApproval, onboardUser, type OnboardResult } from './onboarding
 import { handToHermes, hermesAuto, hermesEnabled } from './hermes.js';
 import { getOutage, setMaintenance } from '../notifier/outage.js';
 import { collectNew, digestRecipients, digestText, sendDigest } from '../notifier/digest.js';
+import { decideCleanup, listCleanupOffers } from './cleanupTools.js';
 import { checkRequest, requestFix } from './requestTools.js';
 import { defineTool, ToolError, type Tool, type ToolContext } from './tool.js';
 import {
@@ -483,4 +484,6 @@ export const adminTools: Tool[] = [
   userPlayback,
   systemHealth,
   serverActivity,
+  listCleanupOffers,
+  decideCleanup,
 ] as unknown as Tool[];

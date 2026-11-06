@@ -6,6 +6,7 @@ import { syncRequests } from './requestSync.js';
 import { maybeSendDigest } from './digest.js';
 import { checkDisruptions } from './outage.js';
 import { checkStuckRequests } from './stuck.js';
+import { checkCleanupOffers } from './cleanup.js';
 import { checkStaleHandoffs } from '../agent/hermes.js';
 import { resolveRequestTickets } from '../agent/tickets.js';
 import type { OmbiTvRequest } from '../integrations/ombi.js';
@@ -59,6 +60,7 @@ export class Poller {
         await this.step('ombi', () => this.checkOmbi()),
         await this.step('watches', () => this.checkWatches()),
         await this.step('stuck-requests', () => this.stuckRequests()),
+        await this.step('cleanup', async () => void (await checkCleanupOffers(this.ctx, (u, e, t) => this.notify(u, e, t)))),
         await this.step('digest', () => maybeSendDigest(this.ctx)),
         await this.step('hermes', () => checkStaleHandoffs(this.ctx)),
       ];

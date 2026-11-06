@@ -87,6 +87,7 @@ const schema = z.object({
   ADMIN_NOTIFY_AUTOFIX: bool(true),
   STUCK_REQUEST_DAYS: int(3),
   CLEANUP_OFFERS: bool(true),
+  CLEANUP_AFTER_DAYS: int(7),
   OUTAGE_DETECTION: bool(true),
 
   HERMES_WEBHOOK_URL: url,
@@ -171,7 +172,7 @@ export function buildConfig(source: Record<string, string | undefined>): { ok: t
   if (c.llm.provider === 'custom' && !c.llm.baseUrl) {
     return { ok: false, error: 'LLM_PROVIDER=custom braucht LLM_BASE_URL (OpenAI-kompatibler Endpoint, z.B. http://ollama:11434/v1)' };
   }
-  for (const k of ['DEBOUNCE_MS', 'HISTORY_LIMIT', 'SUMMARIZE_AFTER', 'MAX_TOOL_ROUNDS', 'REQUESTS_PER_DAY', 'MESSAGES_PER_DAY', 'TOKENS_PER_DAY', 'MAX_MESSAGE_CHARS', 'OFF_TOPIC_LIMIT', 'NOTIFY_POLL_MINUTES', 'AUTOFIX_MAX_REPLACEMENTS_PER_DAY', 'STUCK_REQUEST_DAYS', 'DIGEST_HOUR', 'VOICE_MAX_SECONDS', 'HERMES_TIMEOUT_HOURS'] as const) {
+  for (const k of ['DEBOUNCE_MS', 'HISTORY_LIMIT', 'SUMMARIZE_AFTER', 'MAX_TOOL_ROUNDS', 'REQUESTS_PER_DAY', 'MESSAGES_PER_DAY', 'TOKENS_PER_DAY', 'MAX_MESSAGE_CHARS', 'OFF_TOPIC_LIMIT', 'NOTIFY_POLL_MINUTES', 'AUTOFIX_MAX_REPLACEMENTS_PER_DAY', 'STUCK_REQUEST_DAYS', 'CLEANUP_AFTER_DAYS', 'DIGEST_HOUR', 'VOICE_MAX_SECONDS', 'HERMES_TIMEOUT_HOURS'] as const) {
     if (!Number.isFinite(c[k]) || c[k] < 0) return { ok: false, error: `${k} muss eine Zahl ≥ 0 sein` };
   }
   if (c.DIGEST_HOUR > 23) return { ok: false, error: 'DIGEST_HOUR muss zwischen 0 und 23 liegen' };

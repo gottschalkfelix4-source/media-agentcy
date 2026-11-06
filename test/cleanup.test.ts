@@ -21,8 +21,8 @@ const deleted: number[] = [];
 const noon = new Date();
 noon.setHours(12, 0, 0, 0);
 
-/** Jellyfin item id = "jf<tmdb>"; played[jellyfinUser][tmdb] = [played, total] (default: nothing seen). */
-const played: Record<string, Record<number, [number, number]>> = {};
+/** Jellyfin item id = "jf<tmdb>"; played[jellyfinUser][tmdb] = [played, total, last played N days ago] (default: nothing seen). */
+const played: Record<string, Record<number, [number, number, number?]>> = {};
 const sonarrStatus: Record<number, string> = { 701: 'continuing' };
 
 const toolCtx = (user: User, isAdmin = false): ToolContext => ({
@@ -52,8 +52,8 @@ before(async () => {
   app.ctx.services.jellyfin = {
     findByTmdb: async (_t: string, tmdbId: number) => ({ id: `jf${tmdbId}`, tmdbId: String(tmdbId) }),
     watchState: async (userId: string, itemId: string) => {
-      const [p, t] = played[userId]?.[Number(itemId.slice(2))] ?? [0, 1];
-      return { played: p, total: t };
+      const [p, t, daysAgo] = played[userId]?.[Number(itemId.slice(2))] ?? [0, 1];
+      return { played: p, total: t, lastPlayed: daysAgo === undefined ? undefined : noon.getTime() - daysAgo * 86_400_000 };
     },
     users: async () => [],
   } as never;
@@ -146,4 +146,30 @@ test('a no is remembered and never asked again; running series are skipped; a se
   const admin = app.repo.listAdmins()[0];
   await assert.rejects(decideCleanup.run({ offerId: agreedOffer.id, action: 'delete', force: false }, toolCtx(admin, true)), /noch offen/);
   assert.equal(app.repo.getCleanupOffer(agreedOffer.id)!.status, 'agreed');
+});
+
+test('waits CLEANUP_AFTER_DAYS after the last playback and can be switched off', async () => {
+  const config = app.ctx.config as { CLEANUP_OFFERS: boolean; CLEANUP_AFTER_DAYS: number };
+  const tom = user('4915100000104', 'Tom', 'jf-tom');
+  request(tom.id, 400, 'movie', 'Gerade gesehen');
+  played['jf-tom'] = { 400: [1, 1, 2] }; // watched two days ago
+  const fresh = () => {
+    app.repo.setKv('cleanup_last_run', '2000-01-01T00:00:00Z');
+    for (const r of app.repo.botRequestsForUser(tom.id)) app.repo.setKv(`cleanup_check:${r.id}`, '2000-01-01T00:00:00Z');
+  };
+
+  config.CLEANUP_AFTER_DAYS = 7;
+  fresh();
+  assert.equal((await checkCleanupOffers(app.ctx, () => {}, noon)).length, 0);
+
+  config.CLEANUP_OFFERS = false;
+  config.CLEANUP_AFTER_DAYS = 1;
+  fresh();
+  assert.equal((await checkCleanupOffers(app.ctx, () => {}, noon)).length, 0);
+
+  config.CLEANUP_OFFERS = true;
+  fresh();
+  const made = await checkCleanupOffers(app.ctx, () => {}, noon);
+  assert.equal(made.length, 1);
+  assert.equal(app.repo.getCleanupOffer(made[0])!.title, 'Gerade gesehen');
 });

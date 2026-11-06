@@ -23,11 +23,13 @@ export interface Progress {
   complete: boolean;
   /** At least something was watched. */
   started: boolean;
+  /** Most recent playback (ms since epoch), if known. */
+  lastPlayed?: number;
 }
 
 export function toProgress(ws: WatchState | undefined): Progress | undefined {
   if (!ws || ws.total <= 0) return undefined;
-  return { complete: ws.played >= ws.total, started: ws.played > 0 };
+  return { complete: ws.played >= ws.total, started: ws.played > 0, lastPlayed: ws.lastPlayed };
 }
 
 interface TitleRefs {
@@ -57,7 +59,8 @@ export async function progressOf(ctx: AppContext, user: User, refs: TitleRefs, t
     if (p) found.push(p);
   }
   if (!found.length) return undefined;
-  return { complete: found.some((p) => p.complete), started: found.some((p) => p.started) };
+  const last = found.map((p) => p.lastPlayed).filter((d): d is number => d !== undefined);
+  return { complete: found.some((p) => p.complete), started: found.some((p) => p.started), lastPlayed: last.length ? Math.max(...last) : undefined };
 }
 
 /**
@@ -86,12 +89,16 @@ export async function othersStillOpen(ctx: AppContext, owner: User, type: 'movie
   return false;
 }
 
-/** True when the title may be offered: requester finished it, nobody else has it open, a series has ended. */
-async function offerable(ctx: AppContext, user: User, r: BotRequest & { tmdb_id: number }) {
+/**
+ * True when the title may be offered: requester finished it at least CLEANUP_AFTER_DAYS ago, nobody else has it
+ * open, a series has ended. Without a known playback date (e.g. only marked as watched) the waiting time is skipped.
+ */
+async function offerable(ctx: AppContext, user: User, r: BotRequest & { tmdb_id: number }, now: Date) {
   const refs = await resolveTitle(ctx, r.media_type, r.tmdb_id, r.title);
   if (!refs.jellyfinId && !refs.plexKey) return false;
   const mine = await progressOf(ctx, user, refs, r.media_type);
   if (!mine?.complete) return false;
+  if (mine.lastPlayed !== undefined && now.getTime() - mine.lastPlayed < ctx.config.CLEANUP_AFTER_DAYS * 86_400_000) return false;
   if (r.media_type === 'tv' && ctx.services.sonarr) {
     const [s] = await ctx.services.sonarr.find({ tmdbId: r.tmdb_id });
     // Still running: new episodes will come, so "complete" is only a snapshot.
@@ -139,7 +146,7 @@ export async function checkCleanupOffers(ctx: AppContext, notify: Notify, now = 
     if (prev && (prev.status === 'asked' || now.getTime() - Date.parse(prev.asked_at.replace(' ', 'T') + 'Z') < ASK_AGAIN_MS)) continue;
     repo.setKv(`cleanup_check:${r.id}`, now.toISOString());
     try {
-      if (!(await offerable(ctx, user, r))) continue;
+      if (!(await offerable(ctx, user, r, now))) continue;
     } catch (err) {
       logger.warn({ err, request: r.id }, 'Prüfung auf Löschangebot fehlgeschlagen');
       continue;

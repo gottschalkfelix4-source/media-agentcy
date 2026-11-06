@@ -1,5 +1,5 @@
 import { ApiClient, normalizeTitle, type RecentItem, seg } from './http.js';
-import type { WatchState } from './jellyfin.js';
+import { latestPlayback, type WatchState } from './jellyfin.js';
 
 interface PlexMetadata {
   ratingKey: string;
@@ -12,6 +12,7 @@ interface PlexMetadata {
   addedAt?: number;
   librarySectionID?: number;
   grandparentRatingKey?: string;
+  viewedAt?: number;
   Guid?: { id: string }[];
   Media?: {
     videoResolution?: string;
@@ -141,12 +142,20 @@ export class PlexClient {
         'X-Plex-Container-Size': 5000,
       })
     ).MediaContainer.Metadata ?? [];
-    if (type === 'movie') return { total: 1, played: history.some((h) => h.ratingKey === ratingKey) ? 1 : 0 };
+    if (type === 'movie') {
+      const views = history.filter((h) => h.ratingKey === ratingKey);
+      return { total: 1, played: views.length ? 1 : 0, lastPlayed: latestPlayback(views.map((h) => (h.viewedAt ? h.viewedAt * 1000 : undefined))) };
+    }
     const leaves = (
       await this.api.get<{ MediaContainer: { Metadata?: PlexMetadata[] } }>(`/library/metadata/${seg(ratingKey)}/allLeaves`)
     ).MediaContainer.Metadata?.filter((e) => (e.parentIndex ?? 0) > 0) ?? [];
-    const seen = new Set(history.filter((h) => h.grandparentRatingKey === ratingKey).map((h) => h.ratingKey));
-    return { total: leaves.length, played: leaves.filter((e) => seen.has(e.ratingKey)).length };
+    const views = history.filter((h) => h.grandparentRatingKey === ratingKey);
+    const seen = new Set(views.map((h) => h.ratingKey));
+    return {
+      total: leaves.length,
+      played: leaves.filter((e) => seen.has(e.ratingKey)).length,
+      lastPlayed: latestPlayback(views.map((h) => (h.viewedAt ? h.viewedAt * 1000 : undefined))),
+    };
   }
 
   async sessions(username?: string) {

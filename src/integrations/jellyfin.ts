@@ -24,14 +24,22 @@ interface JfItem {
   DateCreated?: string;
   MediaSources?: { Path?: string; Container?: string; Size?: number; Bitrate?: number; MediaStreams?: JfMediaStream[] }[];
   MediaStreams?: JfMediaStream[];
-  UserData?: { Played?: boolean; PlayCount?: number };
+  UserData?: { Played?: boolean; PlayCount?: number; LastPlayedDate?: string };
 }
 
 /** How much of a title one user has seen. total = 0: nothing to watch yet / unknown. */
 export interface WatchState {
   total: number;
   played: number;
+  /** Most recent playback (ms since epoch), if the server knows it. */
+  lastPlayed?: number;
 }
+
+function latest(dates: (string | number | undefined)[]) {
+  const ms = dates.map((d) => (typeof d === 'string' ? Date.parse(d) : d)).filter((d): d is number => d !== undefined && Number.isFinite(d) && d > 0);
+  return ms.length ? Math.max(...ms) : undefined;
+}
+export { latest as latestPlayback };
 
 export class JellyfinClient {
   readonly api: ApiClient;
@@ -115,11 +123,11 @@ export class JellyfinClient {
     if (type === 'movie') {
       const res = await this.api.get<{ Items: JfItem[] }>('/Items', { Ids: itemId, userId, Fields: 'UserData' });
       const it = res.Items[0];
-      return it ? { total: 1, played: it.UserData?.Played ? 1 : 0 } : { total: 0, played: 0 };
+      return it ? { total: 1, played: it.UserData?.Played ? 1 : 0, lastPlayed: latest([it.UserData?.LastPlayedDate]) } : { total: 0, played: 0 };
     }
     const res = await this.api.get<{ Items: JfItem[] }>(`/Shows/${seg(itemId)}/Episodes`, { userId, Fields: 'UserData', isMissing: false });
     const eps = res.Items.filter((e) => (e.ParentIndexNumber ?? 0) > 0);
-    return { total: eps.length, played: eps.filter((e) => e.UserData?.Played).length };
+    return { total: eps.length, played: eps.filter((e) => e.UserData?.Played).length, lastPlayed: latest(eps.map((e) => e.UserData?.LastPlayedDate)) };
   }
 
   async refreshItem(id: string) {

@@ -46,6 +46,12 @@ export const GROUPS: SettingGroup[] = [
   { id: 'sonarr', label: 'Sonarr', test: 'sonarr' },
   { id: 'radarr', label: 'Radarr', test: 'radarr' },
   { id: 'autofix', label: 'Anfragen & Auto-Fix', description: 'Limits und was der Bot selbstständig reparieren darf.' },
+  {
+    id: 'cleanup',
+    label: 'Aufräumen',
+    description:
+      'Hat ein Nutzer einen Film oder eine beendete Serie selbst angefragt und komplett gesehen, und hat sie sonst niemand mehr offen, fragt der Bot, ob sie gelöscht werden kann. Höchstens eine Frage pro Nutzer und Woche, nur zwischen 9 und 21 Uhr. Gelöscht wird erst, wenn der Nutzer Ja sagt und du es freigibst.',
+  },
   { id: 'notify', label: 'Benachrichtigungen' },
   { id: 'digest', label: 'Wochenrückblick', description: '„Neu auf dem Server“: einmal pro Woche eine feste Nachricht (ohne KI) mit den neuen Filmen und Folgen. Nutzer können ihn mit „Wochenrückblick aus“ abbestellen.' },
   { id: 'disruption', label: 'Störungen & Wartung', description: 'Bekannte Störungen beantwortet der Bot mit einem festen Hinweis, statt jeden einzeln zu diagnostizieren. Den Wartungshinweis setzt du auf der Übersicht oder per Chat.' },
@@ -183,11 +189,19 @@ export const SETTINGS: SettingDef[] = [
   { key: 'ADMIN_NOTIFY_AUTOFIX', group: 'autofix', label: 'Mich bei jedem Ersetzen informieren', type: 'bool', default: 'true', help: 'Gilt auch für Anfragen, die der Bot von sich aus wieder anstößt.' },
   {
     key: 'CLEANUP_OFFERS',
-    group: 'autofix',
+    group: 'cleanup',
     label: 'Nach komplett gesehenen Titeln fragen, ob sie gelöscht werden können',
     type: 'bool',
     default: 'true',
-    help: 'Gilt für Filme und beendete Serien, die der Nutzer selbst angefragt und ganz gesehen hat und die sonst niemand mehr offen hat. Höchstens eine Frage pro Nutzer und Woche. Gelöscht wird erst, wenn der Nutzer Ja sagt und du es freigibst.',
+    help: 'Aus = der Bot fragt nie nach dem Löschen.',
+  },
+  {
+    key: 'CLEANUP_AFTER_DAYS',
+    group: 'cleanup',
+    label: 'Nachfragen nach (Tagen seit dem letzten Schauen)',
+    type: 'int',
+    default: '7',
+    help: 'So lange wartet der Bot nach der zuletzt geschauten Folge bzw. dem Film, bevor er fragt. 0 = sobald alles gesehen ist.',
   },
   {
     key: 'STUCK_REQUEST_DAYS',
